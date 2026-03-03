@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>二维码生成 & 解析 - 单文件版（2026 稳定修复）</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 16px;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      -webkit-tap-highlight-color: transparent;
+    }
+    h1, h2 { text-align: center; color: #000; }
+    .container { max-width: 960px; margin: 0 auto; }
+    .section {
+      background: #fff;
+      padding: 20px;
+      margin: 16px 0;
+      border-radius: 18px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .warning {
+      background: #fff3cd;
+      color: #664d03;
+      padding: 12px 16px;
+      border-radius: 12px;
+      margin: 12px 0;
+      font-size: 15px;
+      text-align: center;
+      border: 1px solid #ffecb3;
+    }
+    button, label[for="fileInput"] {
+      background: #007aff;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 17px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: inline-block;
+      margin: 8px 4px;
+    }
+    button:active, label:active { opacity: 0.7; }
+    input[type="file"] { display: none; }
+    textarea, select {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: 1px solid #d2d2d7;
+      border-radius: 10px;
+      font-size: 17px;
+      box-sizing: border-box;
+    }
+    #qrcode { text-align: center; margin: 20px 0; min-height: 240px; }
+    #preview { max-width: 100%; border-radius: 12px; margin: 12px auto; display: block; border: 2px solid #007aff; }
+    #result {
+      margin-top: 16px;
+      padding: 16px;
+      background: #f0f8ff;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: 15px;
+      min-height: 80px;
+    }
+    video { 
+      width: 100%; 
+      max-width: 400px; 
+      margin: 12px auto; 
+      display: block; 
+      border-radius: 12px; 
+      border: 2px solid #007aff; 
+    }
+    .error { color: #d0021b; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="warning">
+    <strong>⚠️ iOS / Android 必读</strong><br>
+    必须通过 <strong>http://</strong> 或 <strong>https://</strong> 打开此页面！<br>
+    file://（直接双击）会导致上传无反应、jsQR 未定义等错误。<br>
+    推荐：电脑运行 <code>python3 -m http.server 8000</code>，手机访问 http://电脑IP:8000/文件名.html
+  </div>
+
+  <h1>二维码工具</h1>
+
+  <div class="section">
+    <h2>1. 生成二维码</h2>
+    <textarea id="text" rows="4" placeholder="输入网址、文本、WiFi 配置等..."></textarea>
+    <div style="margin:12px 0;">
+      <label>纠错级别：</label>
+      <select id="level">
+        <option value="L">低 (7%)</option>
+        <option value="M" selected>中 (15%)</option>
+        <option value="Q">较高 (25%)</option>
+        <option value="H">最高 (30%)</option>
+      </select>
+    </div>
+    <button onclick="generateQR()">生成二维码</button>
+    <div id="qrcode"></div>
+  </div>
+
+  <div class="section">
+    <h2>2. 解析二维码</h2>
+    <button onclick="startCamera()">📷 打开摄像头扫描</button>
+    <label for="fileInput">📁 从相册 / 文件上传</label>
+    <input type="file" id="fileInput" accept="image/*">
+
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <img id="preview" alt="预览" style="display:none;">
+
+    <div id="result">扫描 / 上传后结果显示在这里...</div>
+  </div>
+</div>
+
+<!-- 可靠 CDN（jsDelivr 更稳定，2026 年仍可用） -->
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+<script>
+// 检查库是否加载成功
+if (typeof QRCode === 'undefined') {
+  document.getElementById('result').innerHTML = '<span class="error">错误：QRCode.js 加载失败。请检查网络或使用 http:// 打开页面。</span>';
+}
+if (typeof jsQR === 'undefined') {
+  document.getElementById('result').innerHTML += '<br><span class="error">错误：jsQR 未定义。脚本加载失败，请确认 CDN 可访问或换网络。</span>';
+}
+
+// 生成二维码
+function generateQR() {
+  const text = document.getElementById('text').value.trim();
+  if (!text) {
+    alert('请输入内容！');
+    return;
+  }
+  const level = document.getElementById('level').value;
+  document.getElementById('qrcode').innerHTML = '';
+  new QRCode(document.getElementById('qrcode'), {
+    text: text,
+    width: 220,
+    height: 220,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel[level]
+  });
+}
+
+// 摄像头扫描部分
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const result = document.getElementById('result');
+let stream = null;
+let scanning = false;
+
+async function startCamera() {
+  if (scanning) return;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+    video.srcObject = stream;
+    scanning = true;
+    result.textContent = '正在实时扫描... 请对准二维码';
+    requestAnimationFrame(scan);
+  } catch (err) {
+    result.textContent = '摄像头打开失败：' + err.message + '\n（请检查权限或用 http/https 访问）';
+  }
+}
+
+function scan() {
+  if (!scanning || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    if (scanning) requestAnimationFrame(scan);
+    return;
+  }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(imageData.data, canvas.width, canvas.height, {
+    inversionAttempts: 'attemptBoth'
+  });
+  if (code && code.data) {
+    result.textContent = '识别成功：\n' + code.data;
+    // scanning = false;  // 找到后自动停止（可取消注释）
+  }
+  requestAnimationFrame(scan);
+}
+
+// 上传图片解析
+document.getElementById('fileInput').onchange = async function(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  result.textContent = '正在处理图片...';
+
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('图片加载失败'));
+      im.src = URL.createObjectURL(file);
+    });
+
+    document.getElementById('preview').src = img.src;
+    document.getElementById('preview').style.display = 'block';
+
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let detected = jsQR(imageData.data, canvas.width, canvas.height, {
+      inversionAttempts: 'attemptBoth'
+    });
+
+    if (!detected) {
+      detected = jsQR(imageData.data, canvas.width, canvas.height, {
+        inversionAttempts: 'dontInvert'
+      });
+    }
+
+    result.textContent = detected?.data
+      ? '识别成功：\n' + detected.data
+      : '未识别到二维码。\n可能原因：图片模糊/太小/对比度低/非二维码/请裁剪后重试';
+  } catch (err) {
+    result.textContent = '处理失败：' + (err.message || String(err));
+  }
+};
+
+// 页面关闭时清理摄像头
+window.addEventListener('beforeunload', () => {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+});
+</script>
+</body>
+</html>
