@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全维度客户端元数据审计系统</title>
+    <style>
+        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --accent: #58a6ff; --text: #c9d1d9; --sub: #8b949e; --green: #3fb950; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; line-height: 1.5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; padding: 40px 0; border-bottom: 1px solid var(--border); }
+        .fp-id { font-size: 32px; font-weight: bold; color: var(--green); font-family: monospace; margin: 15px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin-top: 30px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; transition: transform 0.2s; }
+        .card:hover { border-color: var(--accent); }
+        .card h3 { margin: 0 0 15px 0; font-size: 16px; color: var(--accent); display: flex; align-items: center; }
+        .item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+        .key { color: var(--sub); }
+        .val { color: var(--text); font-family: monospace; text-align: right; word-break: break-all; max-width: 60%; }
+        .loading { animation: pulse 1.5s infinite; color: var(--sub); }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>客户端深度审计系统</h1>
+        <p>正在静默采集 100+ 维度的设备元数据以固化唯一识别码</p>
+        <div id="fp-id" class="fp-id">正在扫描硬件堆栈...</div>
+        <div id="status">● 扫描中</div>
+    </div>
+
+    <div class="grid" id="audit-grid">
+        </div>
+</div>
+
+<script>
+/**
+ * 高级特征采集引擎
+ */
+const Engine = {
+    // 1. 基础环境
+    getBasic() {
+        return {
+            "UserAgent": navigator.userAgent,
+            "系统平台": navigator.platform,
+            "语言": navigator.language,
+            "时区": Intl.DateTimeFormat().resolvedOptions().timeZone,
+            "Do Not Track": navigator.doNotTrack === "1" ? "开启" : "关闭",
+            "Cookie": navigator.cookieEnabled ? "可用" : "禁用"
+        };
+    },
+
+    // 2. 硬件堆栈
+    async getHardware() {
+        let gpu = "未知";
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl');
+            const debug = gl.getExtension('WEBGL_debug_renderer_info');
+            gpu = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+        } catch(e) {}
+
+        let battery = "不支持";
+        if (navigator.getBattery) {
+            const b = await navigator.getBattery();
+            battery = `${(b.level * 100).toFixed(0)}% (${b.charging ? '充电' : '放电'})`;
+        }
+
+        return {
+            "CPU 核心数": navigator.hardwareConcurrency + " 核",
+            "内存估算": (navigator.deviceMemory || "N/A") + " GB",
+            "显卡渲染器": gpu,
+            "最大触控点": navigator.maxTouchPoints,
+            "电池状态": battery
+        };
+    },
+
+    // 3. 屏幕与视觉
+    getDisplay() {
+        return {
+            "分辨率": `${screen.width}x${screen.height}`,
+            "可用区域": `${screen.availWidth}x${screen.availHeight}`,
+            "缩放比例 (DPI)": window.devicePixelRatio,
+            "色彩深度": screen.colorDepth + "位",
+            "深色模式": window.matchMedia('(prefers-color-scheme: dark)').matches ? "是" : "否",
+            "减弱动画": window.matchMedia('(prefers-reduced-motion: reduce)').matches ? "是" : "否"
+        };
+    },
+
+    // 4. 侧信道与隐蔽特征
+    async getStealth() {
+        // 自动化探测
+        const isBot = navigator.webdriver || !!window.__nightmare || !!window.Cypress;
+        
+        // 广告拦截探测
+        let adBlock = false;
+        try { await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', { mode: 'no-cors' }); } 
+        catch(e) { adBlock = true; }
+
+        // 隐身模式探测 (基于存储配额)
+        let incognito = "未知";
+        if (navigator.storage && navigator.storage.estimate) {
+            const {quota} = await navigator.storage.estimate();
+            incognito = quota < 120000000 ? "疑似隐身" : "正常";
+        }
+
+        return {
+            "自动化工具 (Bot)": isBot ? "已检测到" : "无痕迹",
+            "广告拦截器": adBlock ? "已启用" : "未启用",
+            "浏览器模式": incognito,
+            "网络连接类型": navigator.connection?.effectiveType || "N/A",
+            "往返时延 (RTT)": (navigator.connection?.rtt || "N/A") + "ms"
+        };
+    },
+
+    // 5. 硬件数学指纹 (针对 CPU/GPU 浮点误差)
+    getMathFingerprint() {
+        return {
+            "浮点精度 A": Math.sin(-1e100).toString().slice(0, 15),
+            "浮点精度 B": Math.asinh(1e10).toString().slice(0, 15),
+            "Canvas 渲染 Hash": (() => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.textBaseline = "top";
+                ctx.font = "14px 'Arial'";
+                ctx.fillText("Fingerprint123!@#", 2, 2);
+                return canvas.toDataURL().slice(-32);
+            })()
+        };
+    }
+};
+
+/**
+ * 渲染逻辑
+ */
+async function init() {
+    const grid = document.getElementById('audit-grid');
+    const sections = [
+        { title: "基础环境特征", data: Engine.getBasic() },
+        { title: "硬件堆栈明细", data: await Engine.getHardware() },
+        { title: "显示与视觉参数", data: Engine.getDisplay() },
+        { title: "侧信道与行为探测", data: await Engine.getStealth() },
+        { title: "物理层数学指纹", data: Engine.getMathFingerprint() }
+    ];
+
+    let fullDataString = "";
+
+    sections.forEach(sec => {
+        let cardHtml = `<div class="card"><h3>${sec.title}</h3>`;
+        for (let [k, v] of Object.entries(sec.data)) {
+            cardHtml += `<div class="item"><span class="key">${k}</span><span class="val">${v}</span></div>`;
+            fullDataString += v;
+        }
+        cardHtml += `</div>`;
+        grid.innerHTML += cardHtml;
+    });
+
+    // 计算综合 Hash ID
+    let hash = 0;
+    for (let i = 0; i < fullDataString.length; i++) {
+        hash = ((hash << 5) - hash) + fullDataString.charCodeAt(i);
+        hash |= 0;
+    }
+    const finalID = "DID-" + Math.abs(hash).toString(16).toUpperCase();
+    
+    document.getElementById('fp-id').innerText = finalID;
+    document.getElementById('status').innerHTML = '<span style="color: #3fb950">● 审计已完成</span>';
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
