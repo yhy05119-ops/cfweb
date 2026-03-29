@@ -100,7 +100,7 @@
     }
 
     function connect() {
-        socket = new WebSocket('ws://' + location.hostname + ':8080');
+        socket = new WebSocket('ws://149.88.75.118:8080');
         document.getElementById('status').innerText = '正在连接...';
 
         socket.onopen = () => {
