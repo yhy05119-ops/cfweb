@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Secure WebSSH</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css" />
+    <style>
+        :root { --p-height: 160px; --k-height: 44px; }
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background: #000; overflow: hidden; position: fixed; 
+        }
+        .ui-top { height: var(--p-height); background: #1a1a1a; padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; box-sizing: border-box; }
+        input { background: #333; border: 1px solid #444; color: #fff; padding: 6px; border-radius: 4px; font-size: 14px; }
+        button#conn { grid-column: span 2; background: #27ae60; color: white; border: none; padding: 8px; border-radius: 4px; }
+        
+        .helper-bar { 
+            height: var(--k-height); background: #222; display: flex; 
+            overflow-x: auto; align-items: center; padding: 0 5px; gap: 5px; 
+        }
+        .key { min-width: 50px; height: 32px; background: #444; color: white; border: none; border-radius: 4px; font-size: 12px; }
+        
+        #terminal-container { height: calc(100% - var(--p-height) - var(--k-height)); width: 100%; }
+        #status-bar { grid-column: span 2; font-size: 12px; color: #aaa; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="ui-top">
+    <input id="host" placeholder="IP" value="127.0.0.1">
+    <input id="user" placeholder="User" value="root">
+    <input id="pass" type="password" placeholder="Pass">
+    <input id="port" type="number" value="22">
+    <button id="conn" onclick="doConnect()">WSS 安全连接</button>
+    <div id="status-bar">准备就绪 (需先信任自签名证书)</div>
+</div>
+
+<div class="helper-bar">
+    <button class="key" onclick="sendChar('\x09')">Tab</button>
+    <button class="key" onclick="sendChar('\x1b')">Esc</button>
+    <button class="key" onclick="sendChar('\x03')">Ctrl+C</button>
+    <button class="key" onclick="sendChar('\x1b[A')">↑</button>
+    <button class="key" onclick="sendChar('\x1b[B')">↓</button>
+    <button class="key" onclick="sendChar('\x1b[D')">←</button>
+    <button class="key" onclick="sendChar('\x1b[C')">→</button>
+</div>
+
+<div id="terminal-container">
+    <div id="terminal"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
+
+<script>
+    const term = new Terminal({ cursorBlink: true, theme: { background: '#000' }, fontSize: 14 });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+
+    let ws;
+
+    // 适配 iOS 键盘弹出
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => {
+            const vh = window.visualViewport.height;
+            document.body.style.height = vh + 'px'; // 强制 body 匹配可见区域
+            fitAddon.fit();
+            if (ws?.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+            }
+        });
+    }
+
+    function sendChar(data) {
+        if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'input', data }));
+    }
+
+    function doConnect() {
+        // 连接 WSS
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'wss:';
+        ws = new WebSocket('wss://149.88.75.118:8080');
+        
+        document.getElementById('status-bar').innerText = '正在建立加密通道...';
+
+        ws.onopen = () => {
+            document.getElementById('status-bar').innerText = '通道已加密，验证 SSH...';
+            ws.send(JSON.stringify({
+                type: 'connect',
+                host: document.getElementById('host').value,
+                username: document.getElementById('user').value,
+                password: document.getElementById('pass').value,
+                port: document.getElementById('port').value,
+                cols: term.cols, rows: term.rows
+            }));
+            term.focus();
+        };
+
+        ws.onmessage = (e) => {
+            const m = JSON.parse(e.data);
+            if (m.type === 'data') term.write(m.data);
+            if (m.type === 'status' && m.data === 'ssh-ready') {
+                document.getElementById('status-bar').innerText = '🔐 传输已加密 (WSS)';
+                document.getElementById('status-bar').style.color = '#27ae60';
+            }
+            if (m.type === 'error') {
+                term.writeln('\r\n[ERROR]: ' + m.data);
+                document.getElementById('status-bar').innerText = '认证失败';
+            }
+        };
+
+        ws.onclose = () => {
+            document.getElementById('status-bar').innerText = '连接已断开';
+            document.getElementById('status-bar').style.color = '#aaa';
+        };
+    }
+
+    term.onData(data => sendChar(data));
+</script>
+</body>
+</html>
