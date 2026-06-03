@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>High-Performance Particle Life</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
+        canvas { display: block; }
+        #controls { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; pointer-events: auto; }
+    </style>
+</head>
+<body>
+<div id="controls">
+    速度: <input type="range" id="speed" min="0.1" max="1" step="0.05" value="0.5">
+</div>
+<canvas id="life"></canvas>
+
+<script>
+    const canvas = document.getElementById('life');
+    const ctx = canvas.getContext('2d', { alpha: false }); // 优化：关闭透明通道
+    const speedRange = document.getElementById('speed');
+    
+    let w, h;
+    const particles = [];
+    const colors = ['#f00', '#0f0', '#00f', '#ff0', '#f0f', '#0ff'];
+    const rules = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => (Math.random() - 0.5) * 2));
+    
+    const GRID_SIZE = 80; // 感知半径
+    let grid = {};
+
+    function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function addParticles(x, y) {
+        for (let i = 0; i < 30; i++) {
+            particles.push({ x, y, vx: 0, vy: 0, color: Math.floor(Math.random() * 6) });
+        }
+    }
+    window.addEventListener('mousedown', (e) => addParticles(e.clientX, e.clientY));
+    window.addEventListener('touchstart', (e) => addParticles(e.touches[0].clientX, e.touches[0].clientY));
+
+    function update() {
+        const speed = parseFloat(speedRange.value);
+        grid = {};
+
+        // 1. 填充网格
+        for (const p of particles) {
+            const gx = Math.floor(p.x / GRID_SIZE);
+            const gy = Math.floor(p.y / GRID_SIZE);
+            const key = `${gx},${gy}`;
+            if (!grid[key]) grid[key] = [];
+            grid[key].push(p);
+        }
+
+        // 2. 计算受力（只与周围9个网格交互）
+        for (const p of particles) {
+            const gx = Math.floor(p.x / GRID_SIZE);
+            const gy = Math.floor(p.y / GRID_SIZE);
+            
+            let fx = 0, fy = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const cell = grid[`${gx + i},${gy + j}`];
+                    if (!cell) continue;
+                    for (const p2 of cell) {
+                        const dx = p2.x - p.x;
+                        const dy = p2.y - p.y;
+                        const d2 = dx * dx + dy * dy; // 避免开方
+                        if (d2 > 0 && d2 < GRID_SIZE * GRID_SIZE) {
+                            const d = Math.sqrt(d2);
+                            const f = rules[p.color][p2.color] / d;
+                            fx += f * dx;
+                            fy += f * dy;
+                        }
+                    }
+                }
+            }
+            p.vx = (p.vx + fx) * speed;
+            p.vy = (p.vy + fy) * speed;
+            p.x += p.vx;
+            p.y += p.vy;
+
+            // 边界约束
+            if (p.x < 0) { p.x = 0; p.vx *= -1; }
+            if (p.x > w) { p.x = w; p.vx *= -1; }
+            if (p.y < 0) { p.y = 0; p.vy *= -1; }
+            if (p.y > h) { p.y = h; p.vy *= -1; }
+        }
+    }
+
+    function draw() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+        for (const p of particles) {
+            ctx.fillStyle = colors[p.color];
+            ctx.fillRect(p.x, p.y, 2, 2); // fillRect 比 arc 更快
+        }
+        requestAnimationFrame(() => { update(); draw(); });
+    }
+
+    // 初始化
+    for (let i = 0; i < 500; i++) particles.push({ x: Math.random() * w, y: Math.random() * h, vx: 0, vy: 0, color: Math.floor(Math.random() * 6) });
+    draw();
+</script>
+</body>
+</html>
