@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Extreme Particle Life</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #fff; font-family: sans-serif; pointer-events: none; }
+        #speed { pointer-events: auto; }
+    </style>
+</head>
+<body>
+<div id="ui">
+    速度: <input type="range" id="speed" min="0.1" max="1.0" step="0.05" value="0.4">
+</div>
+<canvas id="life"></canvas>
+
+<script>
+    const canvas = document.getElementById('life');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const speedInput = document.getElementById('speed');
+    
+    // 性能优化：使用 TypedArrays 代替对象数组，极大减少垃圾回收压力
+    const MAX_PARTICLES = 1000;
+    const x = new Float32Array(MAX_PARTICLES);
+    const y = new Float32Array(MAX_PARTICLES);
+    const vx = new Float32Array(MAX_PARTICLES);
+    const vy = new Float32Array(MAX_PARTICLES);
+    const color = new Uint8Array(MAX_PARTICLES);
+    
+    let w, h, count = 500;
+    const cellSize = 50; 
+    const colors = ['#f44', '#4f4', '#44f', '#ff4', '#f4f', '#4ff'];
+    const rules = Array.from({length: 6}, () => Array.from({length: 6}, () => (Math.random() - 0.5) * 2));
+
+    function init() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+        for (let i = 0; i < count; i++) {
+            x[i] = Math.random() * w;
+            y[i] = Math.random() * h;
+            color[i] = Math.floor(Math.random() * 6);
+        }
+    }
+
+    function update() {
+        const s = parseFloat(speedInput.value);
+        // 使用简单的网格空间划分
+        const cols = Math.ceil(w / cellSize);
+        const rows = Math.ceil(h / cellSize);
+        const grid = Array.from({length: cols * rows}, () => []);
+
+        for (let i = 0; i < count; i++) {
+            const gx = Math.floor(x[i] / cellSize);
+            const gy = Math.floor(y[i] / cellSize);
+            grid[gx + gy * cols].push(i);
+        }
+
+        for (let i = 0; i < count; i++) {
+            let fx = 0, fy = 0;
+            const cx = Math.floor(x[i] / cellSize);
+            const cy = Math.floor(y[i] / cellSize);
+
+            for (let ox = -1; ox <= 1; ox++) {
+                for (let oy = -1; oy <= 1; oy++) {
+                    const nx = cx + ox, ny = cy + oy;
+                    if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+                    const cell = grid[nx + ny * cols];
+                    for (let j of cell) {
+                        const dx = x[j] - x[i];
+                        const dy = y[j] - y[i];
+                        const d2 = dx * dx + dy * dy;
+                        if (d2 > 0 && d2 < 2500) { // 50^2
+                            const d = Math.sqrt(d2);
+                            const f = rules[color[i]][color[j]] / d;
+                            fx += f * dx; fy += f * dy;
+                        }
+                    }
+                }
+            }
+            vx[i] = (vx[i] + fx) * s;
+            vy[i] = (vy[i] + fy) * s;
+            x[i] += vx[i]; y[i] += vy[i];
+
+            if (x[i] < 0 || x[i] > w) vx[i] *= -1;
+            if (y[i] < 0 || y[i] > h) vy[i] *= -1;
+        }
+    }
+
+    function render() {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+        for (let i = 0; i < count; i++) {
+            ctx.fillStyle = colors[color[i]];
+            ctx.fillRect(x[i], y[i], 2, 2);
+        }
+        update();
+        requestAnimationFrame(render);
+    }
+
+    window.addEventListener('resize', init);
+    init();
+    render();
+</script>
+</body>
+</html>
