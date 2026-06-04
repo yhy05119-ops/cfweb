@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game of Life — Binary WS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #020408;
+    --panel:   #050c14;
+    --border:  #0f2030;
+    --dim:     #1a3a5a;
+    --accent:  #00d4ff;
+    --alive:   #00ffcc;
+    --dead:    #020408;
+    --warn:    #ff4d6d;
+    --text:    #7eb8d0;
+    --font:    'Share Tech Mono', monospace;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* scanline overlay */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,0.08) 3px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  /* ─── Header bar ─── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .logo {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-shadow: 0 0 8px var(--accent);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+  .stat-item { display: flex; gap: 6px; align-items: center; }
+  .stat-label { color: var(--dim); text-transform: uppercase; }
+  .stat-val {
+    color: var(--accent);
+    min-width: 4ch;
+    text-align: right;
+    transition: color 0.1s;
+  }
+  .stat-val.flash { color: #fff; text-shadow: 0 0 6px var(--accent); }
+
+  #status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 6px var(--warn);
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  #status-dot.connected {
+    background: var(--alive);
+    box-shadow: 0 0 8px var(--alive);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+
+  #status-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* ─── Canvas area ─── */
+  #canvas-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    overflow: hidden;
+    position: relative;
+    min-height: 0;
+  }
+
+  #canvas-wrap::before {
+    content: 'GAME OF LIFE';
+    position: absolute;
+    bottom: 8px; right: 12px;
+    font-size: 9px;
+    letter-spacing: 4px;
+    color: var(--dim);
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  /* corner decoration */
+  .corner {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .corner.tl { top: 6px; left: 6px;  border-width: 1px 0 0 1px; }
+  .corner.tr { top: 6px; right: 6px; border-width: 1px 1px 0 0; }
+  .corner.bl { bottom: 6px; left: 6px;  border-width: 0 0 1px 1px; }
+  .corner.br { bottom: 6px; right: 6px; border-width: 0 1px 1px 0; }
+
+  /* ─── Footer ─── */
+  footer {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    text-align: center;
+    flex-shrink: 0;
+    padding: 2px 0;
+  }
+
+  /* loading overlay */
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+    background: var(--panel);
+    z-index: 10;
+    transition: opacity 0.5s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #overlay-msg { font-size: 11px; letter-spacing: 3px; color: var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <span class="logo">GOL//STREAM</span>
+    <div class="stats">
+      <div class="stat-item">
+        <span class="stat-label">FRAME</span>
+        <span class="stat-val" id="s-frame">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">FPS</span>
+        <span class="stat-val" id="s-fps">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">KB/s</span>
+        <span class="stat-val" id="s-bw">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">GRID</span>
+        <span class="stat-val" id="s-grid">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">LATENCY</span>
+        <span class="stat-val" id="s-lat">—</span>
+      </div>
+    </div>
+    <span id="status-dot"></span>
+    <span id="status-label">OFFLINE</span>
+  </header>
+
+  <div id="canvas-wrap">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div id="overlay">
+      <div class="spinner"></div>
+      <div id="overlay-msg">CONNECTING TO SERVER…</div>
+    </div>
+    <canvas id="gol"></canvas>
+  </div>
+
+  <footer>BINARY WS · UINT32 BITPACK · ZERO-COPY BROADCAST</footer>
+
+</div>
+
+<script>
+"use strict";
+
+// ─── DOM refs ──────────────────────────────────────────────────────────────
+const canvas     = document.getElementById("gol");
+const ctx        = canvas.getContext("2d");
+const overlay    = document.getElementById("overlay");
+const overlayMsg = document.getElementById("overlay-msg");
+const dotEl      = document.getElementById("status-dot");
+const labelEl    = document.getElementById("status-label");
+const sFrame     = document.getElementById("s-frame");
+const sFps       = document.getElementById("s-fps");
+const sBw        = document.getElementById("s-bw");
+const sGrid      = document.getElementById("s-grid");
+const sLat       = document.getElementById("s-lat");
+
+// ─── 配置 ──────────────────────────────────────────────────────────────────
+const WS_URL     = `ws://104.244.92.127:9001`;
+const MAGIC      = 0x474F4C00;
+
+// 颜色：alive → ImageData 像素直写（避免 fillRect 循环）
+const COLOR_ALIVE = [0x00, 0xff, 0xcc, 0xff]; // #00ffcc
+const COLOR_DEAD  = [0x02, 0x04, 0x08, 0xff]; // #020408
+
+// ─── 状态 ──────────────────────────────────────────────────────────────────
+let cols = 0, rows = 0, uint32Cols = 0;
+let imageData = null;
+let pixelBuf  = null; // Uint8ClampedArray view
+
+let lastFrameTime = 0;
+let frameCount    = 0;
+let byteCount     = 0;
+let fpsTimer      = 0;
+let renderPending = false;
+
+// 待渲染帧（ring: 只保留最新一帧）
+let pendingGrid = null;
+let pendingFrame = 0;
+let t0send = 0; // 用于估算延迟（无法真测，用消息到达间隔代替）
+let lastMsgTime = 0;
+
+// ─── 画布初始化 ─────────────────────────────────────────────────────────────
+function initCanvas(c, r) {
+  cols = c; rows = r; uint32Cols = c >>> 5;
+
+  const wrap = document.getElementById("canvas-wrap");
+  const maxW = wrap.clientWidth  - 24;
+  const maxH = wrap.clientHeight - 24;
+  const scale = Math.max(1, Math.min(Math.floor(maxW / cols), Math.floor(maxH / rows)));
+
+  canvas.width  = cols;
+  canvas.height = rows;
+  canvas.style.width  = (cols * scale) + "px";
+  canvas.style.height = (rows * scale) + "px";
+
+  imageData = ctx.createImageData(cols, rows);
+  pixelBuf  = imageData.data;
+
+  // 初始填充死亡色
+  for (let i = 0; i < pixelBuf.length; i += 4) {
+    pixelBuf[i]   = COLOR_DEAD[0];
+    pixelBuf[i+1] = COLOR_DEAD[1];
+    pixelBuf[i+2] = COLOR_DEAD[2];
+    pixelBuf[i+3] = 255;
+  }
+
+  sGrid.textContent = `${cols}×${rows}`;
+}
+
+// ─── 渲染（ImageData 直写，最快路径）───────────────────────────────────────
+function render(grid, frameNum) {
+  const uint32 = new Uint32Array(grid.buffer, grid.byteOffset, grid.byteLength >>> 2);
+  const buf    = pixelBuf;
+  const ucols  = uint32Cols;
+
+  for (let r = 0; r < rows; r++) {
+    const rowBase = r * cols;
+    const gridRow = r * ucols;
+
+    for (let ci = 0; ci < ucols; ci++) {
+      let word = uint32[gridRow + ci];
+      const pixBase = (rowBase + (ci << 5)) << 2; // * 4
+
+      for (let b = 0; b < 32; b++) {
+        const alive = (word >>> b) & 1;
+        const pi = pixBase + (b << 2);
+        if (alive) {
+          buf[pi]   = COLOR_ALIVE[0];
+          buf[pi+1] = COLOR_ALIVE[1];
+          buf[pi+2] = COLOR_ALIVE[2];
+        } else {
+          buf[pi]   = COLOR_DEAD[0];
+          buf[pi+1] = COLOR_DEAD[1];
+          buf[pi+2] = COLOR_DEAD[2];
+        }
+        buf[pi+3] = 255;
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // stats
+  const now  = performance.now();
+  frameCount++;
+  const dt = now - lastFrameTime;
+  lastFrameTime = now;
+
+  sFrame.textContent = frameNum;
+
+  if (now - fpsTimer >= 500) {
+    sFps.textContent  = frameCount * 2;    // 每 500ms 采样
+    sBw.textContent   = ((byteCount / 1024) * 2).toFixed(1);
+    sLat.textContent  = dt.toFixed(1) + "ms";
+    frameCount = 0;
+    byteCount  = 0;
+    fpsTimer   = now;
+  }
+}
+
+// ─── rAF 渲染循环 ───────────────────────────────────────────────────────────
+function rafLoop() {
+  if (pendingGrid) {
+    render(pendingGrid, pendingFrame);
+    pendingGrid = null;
+  }
+  renderPending = false;
+  // 继续下一帧
+  scheduleRender();
+}
+
+function scheduleRender() {
+  if (!renderPending) {
+    renderPending = true;
+    requestAnimationFrame(rafLoop);
+  }
+}
+
+// ─── WebSocket ─────────────────────────────────────────────────────────────
+function connect() {
+  overlayMsg.textContent = "CONNECTING TO SERVER…";
+  overlay.classList.remove("hidden");
+  dotEl.classList.remove("connected");
+  labelEl.textContent = "OFFLINE";
+
+  const ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    dotEl.classList.add("connected");
+    labelEl.textContent = "LIVE";
+    console.log("[ws] connected");
+  };
+
+  ws.onmessage = (evt) => {
+    const ab   = evt.data;
+    const view = new Uint32Array(ab);
+
+    if (view.length < 4) return;
+
+    // 解析头
+    const magic = view[0];
+    if (magic !== MAGIC) { console.warn("bad magic", magic.toString(16)); return; }
+
+    const frameNum = view[1];
+    const c = view[2];
+    const r = view[3];
+
+    // 首帧初始化画布
+    if (cols === 0) {
+      initCanvas(c, r);
+      overlay.classList.add("hidden");
+      scheduleRender();
+      fpsTimer = lastFrameTime = performance.now();
+    }
+
+    // 切出数据段（只保存最新帧，丢弃积压）
+    byteCount += ab.byteLength;
+
+    // 创建 uint32 视图指向 payload 区段（避免全量拷贝）
+    // 注意：arraybuffer 生命周期和消息回调一样长，rAF 之前安全
+    pendingGrid  = new Uint32Array(ab, 4 * 4); // 跳过 4 个 uint32 头
+    pendingFrame = frameNum;
+  };
+
+  ws.onclose = () => {
+    dotEl.classList.remove("connected");
+    labelEl.textContent = "OFFLINE";
+    overlay.classList.remove("hidden");
+    overlayMsg.textContent = "DISCONNECTED — RECONNECTING…";
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = (e) => {
+    console.error("[ws] error", e);
+    ws.close();
+  };
+}
+
+// ─── 启动 ──────────────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
