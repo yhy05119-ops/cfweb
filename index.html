@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Particle Life - 5000 Particles / 12 Species</title>
+<style>
+  body { background: #000; margin: 0; overflow: hidden; touch-action: none; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+'use strict';
+
+const CFG = {
+  MAX_P: window.innerWidth, 
+  RMAX: 60,       // 探测半径
+  FORCE: 0.35, 
+  FRICTION: 0.85, 
+  RADIUS: 2.0,
+  // 12 种物种颜色
+  COLORS: [
+    '#FF3B3B', '#FF9F0A', '#FFD60A', '#30D158', 
+    '#64D2FF', '#0A84FF', '#BF5AF2', '#FF375F',
+    '#FFFFFF', '#5E5E5E', '#FF5E3A', '#AC8E68'
+  ]
+};
+
+let W, H, cnt = 0;
+const N_TYPES = CFG.COLORS.length;
+const px = new Float32Array(CFG.MAX_P), py = new Float32Array(CFG.MAX_P);
+const pvx = new Float32Array(CFG.MAX_P), pvy = new Float32Array(CFG.MAX_P);
+const ptyp = new Uint8Array(CFG.MAX_P);
+const matrix = new Float32Array(N_TYPES * N_TYPES);
+
+// 空间哈希网格
+let grid, cols, rows;
+const CELL_SIZE = CFG.RMAX;
+
+function initGrid() {
+  cols = Math.ceil(W / CELL_SIZE);
+  rows = Math.ceil(H / CELL_SIZE);
+  grid = Array.from({ length: cols * rows }, () => []);
+}
+
+function stepPhysics() {
+  // 1. 清空并重建网格
+  for (let i = 0; i < grid.length; i++) grid[i].length = 0;
+  for (let i = 0; i < cnt; i++) {
+    const cx = Math.floor(px[i] / CELL_SIZE), cy = Math.floor(py[i] / CELL_SIZE);
+    grid[((cy % rows + rows) % rows) * cols + ((cx % cols + cols) % cols)].push(i);
+  }
+
+  // 2. 局部计算力
+  for (let i = 0; i < cnt; i++) {
+    let fx = 0, fy = 0;
+    const cx = Math.floor(px[i] / CELL_SIZE), cy = Math.floor(py[i] / CELL_SIZE);
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const targetG = grid[(((cy + dy) % rows + rows) % rows) * cols + (((cx + dx) % cols + cols) % cols)];
+        for (const j of targetG) {
+          if (i === j) continue;
+          let rx = px[j] - px[i], ry = py[j] - py[i];
+          rx -= W * Math.round(rx / W); ry -= H * Math.round(ry / H);
+          const d2 = rx * rx + ry * ry;
+          if (d2 < CELL_SIZE * CELL_SIZE && d2 > 0.01) {
+            const d = Math.sqrt(d2);
+            const mag = (d < CELL_SIZE * 0.3) ? (d / (CELL_SIZE * 0.3) - 1) : matrix[ptyp[i] * N_TYPES + ptyp[j]] * (1 - Math.abs(2 * (d - CELL_SIZE * 0.3) / (CELL_SIZE * 0.7) - 1));
+            fx += (rx / d) * mag * CFG.FORCE;
+            fy += (ry / d) * mag * CFG.FORCE;
+          }
+        }
+      }
+    }
+    pvx[i] = (pvx[i] + fx) * CFG.FRICTION;
+    pvy[i] = (pvy[i] + fy) * CFG.FRICTION;
+    px[i] = (px[i] + pvx[i] + W) % W;
+    py[i] = (py[i] + pvy[i] + H) % H;
+  }
+}
+
+function render() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  const offsets = [[0,0], [W,0], [-W,0], [0,H], [0,-H], [W,H], [W,-H], [-W,H], [-W,-H]];
+
+  for (let t = 0; t < N_TYPES; t++) {
+    ctx.fillStyle = CFG.COLORS[t];
+    ctx.beginPath();
+    for (let i = 0; i < cnt; i++) {
+      if (ptyp[i] !== t) continue;
+      for (const [ox, oy] of offsets) {
+        const nx = px[i] + ox, ny = py[i] + oy;
+        if (nx > -10 && nx < W + 10 && ny > -10 && ny < H + 10) {
+          ctx.moveTo(nx + CFG.RADIUS, ny);
+          ctx.arc(nx, ny, CFG.RADIUS, 0, Math.PI * 2);
+        }
+      }
+    }
+    ctx.fill();
+  }
+}
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+function init() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  initGrid();
+  // 随机初始化矩阵
+  for (let i = 0; i < matrix.length; i++) matrix[i] = Math.random() * 2 - 1;
+  // 初始生成 5000 个粒子
+  for (let i = 0; i < CFG.MAX_P; i++) {
+    px[cnt] = Math.random() * W; py[cnt] = Math.random() * H;
+    ptyp[cnt] = Math.random() * N_TYPES | 0;
+    cnt++;
+  }
+  requestAnimationFrame(function loop() {
+    stepPhysics();
+    render();
+    requestAnimationFrame(loop);
+  });
+}
+
+init();
+</script>
+</body>
+</html>
