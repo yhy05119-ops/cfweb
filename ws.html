@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>uWebSockets.js 广播演示</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #log { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; background: #f9f9f9; }
+        .input-area { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>实时广播接收器</h2>
+    <div id="log"></div>
+
+    <div class="input-area">
+        <input type="text" id="msgInput" placeholder="输入内容发送给所有人..." style="flex-grow: 1;">
+        <button onclick="sendMessage()">发送广播</button>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        const input = document.getElementById('msgInput');
+
+        // 1. 建立连接
+        const ws = new WebSocket('ws://104.244.92.127:9001');
+
+        ws.onopen = () => {
+            log.innerHTML += '<div><b>系统：</b>已连接到广播服务器</div>';
+        };
+
+        // 2. 接收广播消息
+        ws.onmessage = (event) => {
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `<div>[${time}] 收到广播：${event.data}</div>`;
+            log.scrollTop = log.scrollHeight; // 自动滚动到底部
+        };
+
+        ws.onclose = () => {
+            log.innerHTML += '<div><b>系统：</b>连接已断开</div>';
+        };
+
+        // 3. 发送消息（触发后端广播）
+        function sendMessage() {
+            const val = input.value;
+            if (val) {
+                ws.send(val);
+                input.value = '';
+            }
+        }
+
+        // 支持按下回车键发送
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
