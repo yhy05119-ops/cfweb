@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Canvas 像素帧动画</title>
+</head>
+<body>
+    <canvas id="spriteCanvas" width="128" height="128"></canvas>
+
+    <script>
+        const canvas = document.getElementById('spriteCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const img = new Image();
+        img.src = 'image.png'; // 替换为你的图片路径
+
+        const frameWidth = 128;  // 单帧宽度
+        const frameHeight = 128; // 单帧高度
+        const totalFrames = 8;   // 总帧数
+        let currentFrame = 0;    // 当前帧索引
+        let lastTime = 0;
+        const fps = 10;          // 动画播放速度（每秒 10 帧）
+
+        function draw(timestamp) {
+            // 控制刷新率
+            if (timestamp - lastTime > 1000 / fps) {
+                // 清除画布
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 绘制逻辑
+                // drawImage(图片, 截取起始X, 截取起始Y, 截取宽度, 截取高度, 画布X, 画布Y, 绘制宽度, 绘制高度)
+                ctx.drawImage(
+                    img,
+                    currentFrame * frameWidth, 0, 
+                    frameWidth, frameHeight,
+                    0, 0, 
+                    canvas.width, canvas.height
+                );
+
+                // 更新帧索引
+                currentFrame = (currentFrame + 1) % totalFrames;
+                lastTime = timestamp;
+            }
+            
+            requestAnimationFrame(draw);
+        }
+
+        // 图片加载完成后开始循环
+        img.onload = () => {
+            requestAnimationFrame(draw);
+        };
+    </script>
+</body>
+</html>
