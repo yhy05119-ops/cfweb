@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轻量级 TXT 阅读器 (自带一键自检版)</title>
+    <style>
+        body { 
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif; 
+            line-height: 1.8; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #f7f9fa;
+            color: #333;
+        }
+        #controls { 
+            position: sticky; 
+            top: 0; 
+            padding: 15px; 
+            background: #ffffff; 
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            z-index: 10;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        #controls label { font-size: 14px; color: #555; font-weight: bold; }
+        button, select, input[type=file] {
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background-color: #f0f0f0;
+            border-color: #adadad;
+        }
+        #content { 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            background: #fff; 
+            padding: 40px; 
+            border: 1px solid #e1e4e8; 
+            border-radius: 8px;
+            margin-top: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            font-size: 18px;
+            min-height: 350px;
+            color: #2c3e50;
+        }
+        .text-segment {
+            transition: background-color 0.3s, color 0.3s;
+            border-radius: 3px;
+            padding: 2px 4px;
+        }
+        .text-segment.highlight {
+            background-color: #ffe066; 
+            color: #000;
+            font-weight: bold;
+            box-shadow: 0 0 5px rgba(255, 224, 102, 0.8);
+        }
+        #pageNav {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        #pageNav button {
+            padding: 8px 18px;
+            font-weight: bold;
+        }
+        #pageNav button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+            background-color: #f5f5f5;
+        }
+        #pageInfo {
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+        }
+        #pageJump {
+            width: 60px;
+            text-align: center;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #ttsControls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            padding: 15px;
+            margin-top: 15px;
+            background: #fff;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            flex-wrap: wrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+        #ttsControls label {
+            font-size: 14px;
+            color: #555;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        #ttsControls input[type=range] {
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        #ttsStatus {
+            font-size: 13px;
+            color: #0066cc;
+            font-weight: bold;
+            min-width: 150px;
+        }
+        #ttsStatus.error {
+            color: #c0392b;
+        }
+        .tts-btn {
+            padding: 6px 14px;
+            font-weight: bold;
+        }
+        .tts-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        
+        /* 💡 自检面板样式 */
+        #diagnosticPanel {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: "Consolas", "Courier New", monospace;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none; /* 默认隐藏，点击时显示 */
+        }
+        .diag-success { color: #4ec9b0; }
+        .diag-fail { color: #f44336; font-weight: bold; }
+        .diag-warn { color: #ce9178; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <input type="file" id="fileInput" accept=".txt">
+        <button onclick="changeFontSize(2)">🔍 放大</button>
+        <button onclick="changeFontSize(-2)">🔍 缩小</button>
+        <button onclick="runDiagnostics()" style="background-color: #e8f5e9; border-color: #81c784;">🛠️ 一键自检</button>
+        <label>每页字数:
+            <select id="pageSizeSelect" onchange="onPageSizeChange()">
+                <option value="500">500</option>
+                <option value="1000" selected>1000</option>
+                <option value="2000">2000</option>
+                <option value="4000">4000</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="diagnosticPanel"></div>
+
+    <div id="content">请点击左上角选择 TXT 文件...</div>
+
+    <div id="pageNav" style="display:none;">
+        <button id="prevBtn" onclick="prevPage()">上一页</button>
+        <span id="pageInfo">第 1 / 1 页</span>
+        <input type="number" id="pageJump" min="1" value="1" onkeydown="if(event.key==='Enter') jumpToPage()">
+        <button onclick="jumpToPage()">跳转</button>
+        <button id="nextBtn" onclick="nextPage()">下一页</button>
+    </div>
+
+    <div id="ttsControls" style="display:none;">
+        <label>音色:
+            <select id="voiceSelect">
+                <option value="male-qn-qingse">青涩青年男声</option>
+                <option value="male-qn-jingying">精英青年男声</option>
+                <option value="male-qn-badao">霸道男声</option>
+                <option value="female-shaonv">少女音</option>
+                <option value="female-yujie">御姐音</option>
+                <option value="female-chengshu">成熟女声</option>
+                <option value="presenter_male">男主持人</option>
+                <option value="presenter_female">女主持人</option>
+            </select>
+        </label>
+        <label>语速:
+            <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="1">
+            <span id="speedVal">1.0</span>
+        </label>
+        <button id="readCurrentBtn" class="tts-btn" onclick="startReading(false)">🔊 朗读本页</button>
+        <button id="readAllBtn" class="tts-btn" onclick="startReading(true)">🔁 连续朗读全文</button>
+        <button id="stopReadBtn" class="tts-btn" onclick="stopReading()" disabled>⏹️ 停止</button>
+        <span id="ttsStatus"></span>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const content = document.getElementById('content');
+        const pageNav = document.getElementById('pageNav');
+        const pageInfo = document.getElementById('pageInfo');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        const pageJump = document.getElementById('pageJump');
+        const diagnosticPanel = document.getElementById('diagnosticPanel');
+
+        let fullText = '';
+        let pages = [];
+        let currentPage = 0;
+        let pageSize = 1000;
+
+        let segments = [];       
+        let currentSegmentIdx = 0; 
+
+        // ==================== TTS 相关 ====================
+        // ⚠️ 请在此处填入您的 MiniMax API Key
+        const MINIMAX_API_KEY = 'sk-cp-9p9ImZG_33-dnQY8II1RB1DZOhoRV0qaDYoo0VUhnW4xa7TNM5AoF3N_IEGRkjX0Zdc68DbBFzuXrOtl9jGJp-5B21VhLyl0RrMErZFbt9TgomWxjz3YDcY';
+        const MINIMAX_GROUP_ID = ''; 
+        const MINIMAX_TTS_URL = 'https://api.minimax.chat/v1/t2a_v2'; 
+
+        const voiceSelect = document.getElementById('voiceSelect');
+        const speedRange = document.getElementById('speedRange');
+        const speedVal = document.getElementById('speedVal');
+        const readCurrentBtn = document.getElementById('readCurrentBtn');
+        const readAllBtn = document.getElementById('readAllBtn');
+        const stopReadBtn = document.getElementById('stopReadBtn');
+        const ttsStatus = document.getElementById('ttsStatus');
+        const ttsControls = document.getElementById('ttsControls');
+
+        // 双轨播放器
+        let audioCtx = null;
+        let activeSourceNode = null; 
+        let backupAudio = new Audio(); // 备用原生播放器
+        let isAudioUnlocked = false;
+        let rawBase64Data = null;      // 暂存最新的 raw base64，供备用播放器使用
+
+        // 1秒极低音量真实MP3数据，用于物理音轨解锁
+        const REAL_MINI_AUDIO_SRC = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPSelfbWVkaWFmb3VuZGF0aW9uAhAAAAAAAAAAAAAA//MUxAAAAAACAAAADAAABXNvdW5kAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//MUxAcAAACAAAAADAAABgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//MUxAsAAACAAAAADAAABgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+
+        function writeConsoleLog(msg, isError = false) {
+            console.log(msg);
+            if (diagnosticPanel) {
+                diagnosticPanel.style.display = 'block';
+                const color = isError ? '#ff4d4f' : '#4ec9b0';
+                diagnosticPanel.innerHTML += `<div style="color: ${color}; font-family: monospace;">[Log] ${msg}</div>`;
+                diagnosticPanel.scrollTop = diagnosticPanel.scrollHeight;
+            }
+        }
+
+        // 同步线程解锁所有潜在的物理音轨
+        async function forceUnlockAudio() {
+            if (isAudioUnlocked) return true;
+            try {
+                writeConsoleLog("正在尝试激活 iOS 物理音轨设备...");
+                
+                // 1. 尝试解锁备用 Audio 标签
+                backupAudio.src = REAL_MINI_AUDIO_SRC;
+                await backupAudio.play();
+                
+                // 2. 尝试激活 Web Audio 上下文
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) {
+                    audioCtx = new AudioContextClass();
+                    if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume();
+                    }
+                    const buffer = audioCtx.createBuffer(1, 1, 22050);
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioCtx.destination);
+                    source.start(0);
+                }
+                
+                isAudioUnlocked = true;
+                writeConsoleLog("🎉 所有物理音轨均已被激活！");
+                return true;
+            } catch (err) {
+                writeConsoleLog("⚠️ 物理音轨自动解锁警告 (继续尝试): " + err.message, false);
+                // 即使报错，只要用户点击了，有些浏览器也会静默解锁，允许继续
+                isAudioUnlocked = true; 
+                return true;
+            }
+        }
+
+        speedRange.addEventListener('input', () => {
+            speedVal.textContent = parseFloat(speedRange.value).toFixed(1);
+        });
+
+        function setTtsStatus(msg, isError) {
+            ttsStatus.textContent = msg;
+            ttsStatus.className = isError ? 'error' : '';
+            writeConsoleLog(msg, isError);
+        }
+
+        function setReadingUiState(reading) {
+            isReading = reading;
+            readCurrentBtn.disabled = reading;
+            readAllBtn.disabled = reading;
+            stopReadBtn.disabled = !reading;
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        async function requestTts(text) {
+            if (!MINIMAX_API_KEY || MINIMAX_API_KEY === '在这里填入你的APIKey') {
+                throw new Error('未检测到有效的 API Key。请先配置。');
+            }
+            const url = MINIMAX_GROUP_ID
+                ? `${MINIMAX_TTS_URL}?GroupId=${encodeURIComponent(MINIMAX_GROUP_ID)}`
+                : MINIMAX_TTS_URL;
+
+            writeConsoleLog("正在向 MiniMax 请求合成声音...");
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${MINIMAX_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'speech-2.8-hd',
+                    text: text,
+                    stream: false,
+                    voice_setting: {
+                        voice_id: voiceSelect.value,
+                        speed: parseFloat(speedRange.value),
+                        vol: 1,
+                        pitch: 0
+                    },
+                    audio_setting: {
+                        sample_rate: 32000,
+                        bitrate: 128000,
+                        format: 'mp3',
+                        channel: 1
+                    }
+                })
+            });
+
+            if (!resp.ok) {
+                throw new Error(`请求失败。代码: ${resp.status}`);
+            }
+            const json = await resp.json();
+            if (json.base_resp && json.base_resp.status_code !== 0) {
+                throw new Error(json.base_resp.status_msg || 'API错误');
+            }
+            if (!json.data || !json.data.audio) {
+                throw new Error('未获取到有效音频数据');
+            }
+            
+            // 暂存 base64 供可能的降级备用
+            rawBase64Data = json.data.audio;
+            writeConsoleLog("声音合成成功，正在处理数据...");
+            return base64ToArrayBuffer(json.data.audio);
+        }
+
+        let isReading = false;      
+        let continuousMode = false; 
+        let readingToken = 0;       
+
+        function stopReading() {
+            readingToken++; 
+            continuousMode = false;
+            
+            // 停止 Web Audio
+            if (activeSourceNode) {
+                try { activeSourceNode.stop(); } catch(e) {}
+                activeSourceNode = null;
+            }
+            // 停止 备用 Audio
+            if (backupAudio) {
+                backupAudio.pause();
+                backupAudio.src = REAL_MINI_AUDIO_SRC;
+            }
+
+            clearAllHighlights();
+            setReadingUiState(false);
+            setTtsStatus('已停止播放', false);
+        }
+
+        function clearAllHighlights() {
+            const spans = content.querySelectorAll('.text-segment');
+            spans.forEach(span => span.classList.remove('highlight'));
+        }
+
+        function highlightSegment(idx) {
+            clearAllHighlights();
+            const activeSpan = content.querySelector(`.text-segment[data-index="${idx}"]`);
+            if (activeSpan) {
+                activeSpan.classList.add('highlight');
+                activeSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        // 💡 降级播放机制：当 Web Audio API 解码失败时，自动切换至此原生通道
+        function playWithBackupAudio(token) {
+            return new Promise((resolve) => {
+                writeConsoleLog("🔄 Web Audio 解码受限，正在启用 iOS 降级备用音频通道...");
+                if (!rawBase64Data) {
+                    resolve(false);
+                    return;
+                }
+                
+                backupAudio.src = `data:audio/mpeg;base64,${rawBase64Data}`;
+                backupAudio.onended = () => {
+                    if (token !== readingToken) { resolve(false); return; }
+                    resolve(true);
+                };
+                backupAudio.onerror = (e) => {
+                    if (token !== readingToken) { resolve(false); return; }
+                    const errDetail = backupAudio.error ? `Code: ${backupAudio.error.code}` : '未知';
+                    writeConsoleLog(`❌ 降级备用通道也播放失败 [${errDetail}]`, true);
+                    resolve(false);
+                };
+                
+                backupAudio.play().then(() => {
+                    writeConsoleLog("🎉 备用音轨播放中...");
+                }).catch(err => {
+                    writeConsoleLog("❌ 备用音轨启动失败: " + err.message, true);
+                    resolve(false);
+                });
+            });
+        }
+
+        async function playSegmentAudio(token, segmentIdx) {
+            const text = segments[segmentIdx];
+            if (!text || !text.trim()) {
+                return true; 
+            }
+
+            highlightSegment(segmentIdx);
+
+            let arrayBuffer;
+            try {
+                arrayBuffer = await requestTts(text);
+            } catch (err) {
+                if (token !== readingToken) return false;
+                setTtsStatus('合成错误: ' + err.message, true);
+                return false;
+            }
+
+            if (token !== readingToken) {
+                return false;
+            }
+
+            return new Promise((resolve) => {
+                setTtsStatus(`正在准备播放第 ${currentPage + 1} 页...`, false);
+                
+                // 如果 Web Audio 未初始化，直接进入降级通道
+                if (!audioCtx) {
+                    playWithBackupAudio(token).then(resolve);
+                    return;
+                }
+
+                // 异步解码 MP3 数据
+                try {
+                    audioCtx.decodeAudioData(arrayBuffer, (audioBuffer) => {
+                        if (token !== readingToken) { resolve(false); return; }
+                        
+                        const source = audioCtx.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioCtx.destination);
+                        
+                        activeSourceNode = source;
+                        
+                        source.onended = () => {
+                            if (activeSourceNode === source) activeSourceNode = null;
+                            if (token !== readingToken) { resolve(false); return; }
+                            resolve(true);
+                        };
+                        
+                        source.start(0);
+                    }, (decodeErr) => {
+                        // 💡 修复：安全读取可能为 null 的 decodeErr
+                        const errMsg = decodeErr && decodeErr.message ? decodeErr.message : "无详细错误描述";
+                        writeConsoleLog("⚠️ Web Audio 物理解码失败: " + errMsg, false);
+                        
+                        // 💡 核心自适应：Web Audio 解码失败，立即降级到 Data URL 原生声道重试
+                        playWithBackupAudio(token).then(resolve);
+                    });
+                } catch (err) {
+                    writeConsoleLog("⚠️ Web Audio 调用异常: " + err.message, false);
+                    playWithBackupAudio(token).then(resolve);
+                }
+            });
+        }
+
+        async function startReading(continuous) {
+            if (isReading) return;
+            
+            // 点击瞬间强行激活所有可能音轨
+            await forceUnlockAudio();
+
+            continuousMode = continuous;
+            const token = ++readingToken;
+            setReadingUiState(true);
+
+            if (currentSegmentIdx >= segments.length) {
+                currentSegmentIdx = 0;
+            }
+
+            while (true) {
+                while (currentSegmentIdx < segments.length) {
+                    const ok = await playSegmentAudio(token, currentSegmentIdx);
+                    if (token !== readingToken) return;
+
+                    if (!ok) {
+                        setReadingUiState(false);
+                        return;
+                    }
+                    currentSegmentIdx++;
+                }
+
+                if (!continuousMode) {
+                    clearAllHighlights();
+                    currentSegmentIdx = 0;
+                    setTtsStatus('当前页朗读完成', false);
+                    setReadingUiState(false);
+                    return;
+                }
+
+                if (currentPage >= pages.length - 1) {
+                    clearAllHighlights();
+                    currentSegmentIdx = 0;
+                    setTtsStatus('全文朗读完成 🎉', false);
+                    setReadingUiState(false);
+                    return;
+                }
+
+                currentPage++;
+                currentSegmentIdx = 0; 
+                renderPage();
+            }
+        }
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            stopReading(); 
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const buffer = e.target.result;
+                fullText = decodeText(buffer);
+                pageSize = parseInt(pageSizeSelect.value, 10);
+                splitIntoPages();
+                currentPage = 0;
+                renderPage();
+                
+                pageNav.style.display = 'flex';
+                ttsControls.style.display = 'flex'; 
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function decodeText(buffer) {
+            try {
+                const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+                return utf8Decoder.decode(buffer);
+            } catch (err) {
+                const gbDecoder = new TextDecoder('gb18030', { fatal: false });
+                return gbDecoder.decode(buffer);
+            }
+        }
+
+        function splitIntoPages() {
+            pages = [];
+            let pos = 0;
+            const len = fullText.length;
+            while (pos < len) {
+                let end = Math.min(pos + pageSize, len);
+                if (end < len) {
+                    const nextBreak = fullText.indexOf('\n', end);
+                    const searchLimit = Math.min(end + 200, len);
+                    if (nextBreak !== -1 && nextBreak <= searchLimit) {
+                        end = nextBreak + 1;
+                    }
+                }
+                const pageText = fullText.slice(pos, end);
+                if (pageText.trim() || pos === 0) {
+                    pages.push(pageText);
+                }
+                pos = end;
+            }
+            if (pages.length === 0) pages.push('');
+        }
+
+        function parseSegments(text) {
+            const rawSegs = text.split(/([。！？；\n\r]+)/);
+            const result = [];
+            for (let i = 0; i < rawSegs.length; i += 2) {
+                const textPart = rawSegs[i];
+                const puncPart = rawSegs[i+1] || '';
+                const combined = textPart + puncPart;
+                if (combined.trim()) {
+                    result.push(combined);
+                }
+            }
+            return result.length > 0 ? result : [text];
+        }
+
+        function renderPage() {
+            const pageText = pages[currentPage] || '(空)';
+            segments = parseSegments(pageText); 
+            currentSegmentIdx = 0; 
+
+            content.innerHTML = '';
+            segments.forEach((segText, index) => {
+                const span = document.createElement('span');
+                span.className = 'text-segment';
+                span.setAttribute('data-index', index);
+                span.textContent = segText;
+                content.appendChild(span);
+            });
+
+            pageInfo.textContent = `第 ${currentPage + 1} / ${pages.length} 页`;
+            pageJump.value = currentPage + 1;
+            prevBtn.disabled = currentPage === 0;
+            nextBtn.disabled = currentPage === pages.length - 1;
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        }
+
+        function prevPage() {
+            if (currentPage > 0) {
+                stopReading(); 
+                currentPage--;
+                renderPage();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < pages.length - 1) {
+                stopReading(); 
+                currentPage++;
+                renderPage();
+            }
+        }
+
+        function jumpToPage() {
+            let target = parseInt(pageJump.value, 10);
+            if (isNaN(target)) return;
+            stopReading(); 
+            target = Math.max(1, Math.min(pages.length, target));
+            currentPage = target - 1;
+            renderPage();
+        }
+
+        function onPageSizeChange() {
+            if (!fullText) return;
+            stopReading(); 
+            pageSize = parseInt(pageSizeSelect.value, 10);
+            splitIntoPages();
+            currentPage = 0;
+            renderPage();
+        }
+
+        function changeFontSize(delta) {
+            const currentSize = parseFloat(window.getComputedStyle(content).fontSize);
+            content.style.fontSize = Math.max(12, currentSize + delta) + 'px'; 
+        }
+
+        // ==================== 自动诊断系统 ====================
+        async function runDiagnostics() {
+            diagnosticPanel.style.display = 'block';
+            diagnosticPanel.innerHTML = "=== 开始系统自检 ===\n";
+            
+            let passed = true;
+
+            function log(msg, status = 'info') {
+                let cssClass = '';
+                let prefix = '[信息] ';
+                if (status === 'success') { cssClass = 'class="diag-success"'; prefix = '[成功] '; }
+                else if (status === 'fail') { cssClass = 'class="diag-fail"'; prefix = '[失败] '; passed = false; }
+                else if (status === 'warn') { cssClass = 'class="diag-warn"'; prefix = '[警告] '; }
+                diagnosticPanel.innerHTML += `<div ${cssClass}>${prefix}${msg}</div>`;
+                diagnosticPanel.scrollTop = diagnosticPanel.scrollHeight;
+            }
+
+            log("检测 Web Audio API 兼容性...");
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) {
+                log("系统支持 Web Audio API 解码模式！", "success");
+            } else {
+                log("系统不支持 Web Audio API！", "fail");
+            }
+
+            log("检测 API Key 填写状况...");
+            if (!MINIMAX_API_KEY || MINIMAX_API_KEY === '在这里填入你的APIKey') {
+                log("未检测到 MiniMax API Key。请配置 Key 后再试。", "fail");
+            } else {
+                log("API Key 形式检测通过。", "success");
+            }
+
+            log("正在尝试模拟发起 MiniMax TTS 合成网络请求...");
+            if (MINIMAX_API_KEY && MINIMAX_API_KEY !== '在这里填入你的APIKey') {
+                try {
+                    const testUrl = MINIMAX_GROUP_ID
+                        ? `${MINIMAX_TTS_URL}?GroupId=${encodeURIComponent(MINIMAX_GROUP_ID)}`
+                        : MINIMAX_TTS_URL;
+
+                    const testResp = await fetch(testUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${MINIMAX_API_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: 'speech-2.8-hd',
+                            text: "自检",
+                            stream: false,
+                            voice_setting: { voice_id: 'male-qn-qingse', speed: 1, vol: 1, pitch: 0 },
+                            audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
+                        })
+                    });
+
+                    log(`收到 MiniMax 服务器响应，HTTP 状态码: ${testResp.status}`, testResp.ok ? "success" : "fail");
+                    
+                    const resJson = await testResp.json();
+                    if (resJson.base_resp && resJson.base_resp.status_code !== 0) {
+                        log(`MiniMax 返回 API 内部错误: ${resJson.base_resp.status_msg} (代码: ${resJson.base_resp.status_code})`, "fail");
+                    } else if (resJson.data && resJson.data.audio) {
+                        log("网络连通、API Key 鉴权全线通过！", "success");
+                    } else {
+                        log("服务器返回的数据中未检测到 audio 字段。", "fail");
+                    }
+                } catch (netErr) {
+                    log("网络请求失败！错误信息: " + netErr.message, "fail");
+                    log("提示：由于您使用了 file:/// 本地协议，iOS 沙箱屏蔽了本地网络请求，建议您部署到公网服务器，或使用电脑版浏览器测试。", "warn");
+                }
+            }
+
+            log("=== 自检结束 ===");
+        }
+
+    </script>
+</body>
+</html>
