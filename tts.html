@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>轻量级 TXT 阅读器</title>
+    <style>
+        body { 
+            font-family: "Microsoft YaHei", "SimSun", "WenQuanYi Micro Hei", sans-serif; 
+            line-height: 1.6; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #fcfcfc;
+        }
+        #controls { 
+            position: sticky; 
+            top: 0; 
+            padding: 15px; 
+            background: #eee; 
+            border-bottom: 2px solid #ccc;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            z-index: 20;
+        }
+        #controls label { font-size: 14px; color: #333; }
+        #ttsPanel {
+            position: sticky;
+            top: 62px;
+            padding: 12px 15px;
+            background: #f3f7ff;
+            border-bottom: 2px solid #cfe0ff;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            z-index: 19;
+        }
+        #ttsPanel label { font-size: 13px; color: #333; }
+        #ttsPanel input[type="password"], #ttsPanel select, #ttsPanel input[type="text"] {
+            padding: 4px 6px;
+        }
+        #apiKeyInput { width: 220px; }
+        #ttsStatus { font-size: 13px; color: #666; min-width: 120px; }
+        #content { 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            background: #fff; 
+            padding: 30px; 
+            border: 1px solid #ddd; 
+            margin-top: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-size: 16px;
+            min-height: 300px;
+        }
+        .sentence { transition: background-color 0.2s; cursor: pointer; }
+        .sentence.reading {
+            background-color: #fff3a0;
+            border-radius: 2px;
+        }
+        #pageNav {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+        #pageNav button { padding: 6px 16px; cursor: pointer; }
+        #pageNav button:disabled { cursor: not-allowed; opacity: 0.5; }
+        #pageInfo { font-size: 14px; color: #555; }
+        #pageJump { width: 60px; text-align: center; }
+        button.tts-btn { cursor: pointer; padding: 5px 12px; }
+        button.tts-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <input type="file" id="fileInput" accept=".txt">
+        <button onclick="changeFontSize(2)">放大字体</button>
+        <button onclick="changeFontSize(-2)">缩小字体</button>
+        <label>每页字数:
+            <select id="pageSizeSelect" onchange="onPageSizeChange()">
+                <option value="500">500</option>
+                <option value="1000" selected>1000</option>
+                <option value="2000">2000</option>
+                <option value="4000">4000</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="ttsPanel">
+        <label>API Key:
+            <input type="password" id="apiKeyInput" placeholder="粘贴你的 MiniMax API Key">
+        </label>
+        <label>代理地址:
+            <input type="text" id="proxyUrlInput" placeholder="留空=直连(会被CORS拦截)" style="width:220px;">
+        </label>
+        <label>音色:
+            <select id="voiceSelect">
+                <option value="audiobook_male_1">audiobook_male_1（男声·朗读）</option>
+                <option value="audiobook_female_1">audiobook_female_1（女声·朗读）</option>
+                <option value="male-qn-qingse">male-qn-qingse（男声·阳光）</option>
+                <option value="female-shaonv">female-shaonv（女声·少女）</option>
+                <option value="custom">自定义 voice_id...</option>
+            </select>
+        </label>
+        <input type="text" id="customVoiceInput" placeholder="自定义 voice_id" style="display:none; width:150px;">
+        <label>语速:
+            <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="1">
+            <span id="speedVal">1.0</span>
+        </label>
+        <label>预取阈值:
+            <input type="number" id="prefetchThresholdInput" min="1" max="99" value="60" style="width:50px; text-align:center;">%
+        </label>
+        <button class="tts-btn" id="ttsPlayBtn" onclick="startReading()">▶ 逐句朗读（本页）</button>
+        <label>从第
+            <input type="number" id="startFromInput" min="1" value="1" style="width:50px; text-align:center;">
+            句开始
+        </label>
+        <button class="tts-btn" onclick="startReading(true)">跳转朗读</button>
+        <button class="tts-btn" id="ttsPauseBtn" onclick="togglePause()" disabled>暂停</button>
+        <button class="tts-btn" id="ttsStopBtn" onclick="stopReading()" disabled>停止</button>
+        <span id="ttsStatus"></span>
+    </div>
+
+    <details id="advancedPanel" style="margin-top:0; background:#fffdf3; border:1px solid #eee8cc; padding:10px 15px;">
+        <summary style="cursor:pointer; font-size:13px; color:#555;">高级参数设置（全部可自定义）</summary>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; font-size:13px;">
+            <label>模型:
+                <select id="modelSelect">
+                    <option value="speech-2.8-hd" selected>speech-2.8-hd</option>
+                    <option value="speech-2.8-turbo">speech-2.8-turbo</option>
+                    <option value="speech-2.6-hd">speech-2.6-hd</option>
+                    <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+                    <option value="speech-02-hd">speech-02-hd</option>
+                    <option value="speech-02-turbo">speech-02-turbo</option>
+                    <option value="speech-01-hd">speech-01-hd</option>
+                    <option value="speech-01-turbo">speech-01-turbo</option>
+                </select>
+            </label>
+            <label>音量(vol):
+                <input type="number" id="volInput" min="0.1" max="10" step="0.1" value="1" style="width:55px;">
+            </label>
+            <label>语调(pitch):
+                <input type="number" id="pitchInput" min="-12" max="12" step="1" value="0" style="width:50px;">
+            </label>
+            <label>情绪(emotion):
+                <select id="emotionSelect">
+                    <option value="" selected>不指定</option>
+                    <option value="happy">happy 高兴</option>
+                    <option value="sad">sad 悲伤</option>
+                    <option value="angry">angry 愤怒</option>
+                    <option value="fearful">fearful 害怕</option>
+                    <option value="disgusted">disgusted 厌恶</option>
+                    <option value="surprised">surprised 惊讶</option>
+                    <option value="calm">calm 平静</option>
+                </select>
+            </label>
+            <label>语言增强(language_boost):
+                <select id="languageBoostSelect">
+                    <option value="auto" selected>auto</option>
+                    <option value="Chinese">Chinese</option>
+                    <option value="English">English</option>
+                    <option value="Chinese,Yue">Chinese,Yue（粤语）</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                </select>
+            </label>
+            <label>采样率(sample_rate):
+                <select id="sampleRateSelect">
+                    <option value="8000">8000</option>
+                    <option value="16000">16000</option>
+                    <option value="22050">22050</option>
+                    <option value="24000">24000</option>
+                    <option value="32000" selected>32000</option>
+                    <option value="44100">44100</option>
+                </select>
+            </label>
+            <label>比特率(bitrate):
+                <select id="bitrateSelect">
+                    <option value="32000">32000</option>
+                    <option value="64000">64000</option>
+                    <option value="128000" selected>128000</option>
+                    <option value="256000">256000</option>
+                </select>
+            </label>
+            <label>音频格式:
+                <select id="formatSelect">
+                    <option value="mp3" selected>mp3</option>
+                    <option value="wav">wav</option>
+                    <option value="pcm">pcm</option>
+                    <option value="flac">flac</option>
+                </select>
+            </label>
+            <label>声道:
+                <select id="channelSelect">
+                    <option value="1" selected>单声道</option>
+                    <option value="2">双声道</option>
+                </select>
+            </label>
+            <button class="tts-btn" onclick="resetAdvancedSettings()">恢复默认</button>
+        </div>
+    </details>
+
+    <div id="debugLog" style="font-size:12px; color:#555; background:#fafafa; border:1px solid #eee; padding:8px 12px; margin-top:8px; max-height:120px; overflow-y:auto; display:none; white-space:pre-wrap;"></div>
+
+    <pre id="content">请点击左上角选择 TXT 文件...</pre>
+
+    <div id="pageNav" style="display:none;">
+        <button id="prevBtn" onclick="prevPage()">上一页</button>
+        <span id="pageInfo">第 1 / 1 页</span>
+        <input type="number" id="pageJump" min="1" value="1" onkeydown="if(event.key==='Enter') jumpToPage()">
+        <button onclick="jumpToPage()">跳转</button>
+        <button id="nextBtn" onclick="nextPage()">下一页</button>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const content = document.getElementById('content');
+        const pageNav = document.getElementById('pageNav');
+        const pageInfo = document.getElementById('pageInfo');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        const pageJump = document.getElementById('pageJump');
+
+        let fullText = '';
+        let pages = [];
+        let currentPage = 0;
+        let pageSize = 1000;
+
+        // ---------- 文件加载 ----------
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            stopReading();
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const buffer = e.target.result;
+                fullText = decodeText(buffer);
+                pageSize = parseInt(pageSizeSelect.value, 10);
+                splitIntoPages();
+                currentPage = 0;
+                renderPage();
+                pageNav.style.display = 'flex';
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function decodeText(buffer) {
+            // 优先尝试严格 UTF-8 解码，失败则回退到 GB18030（兼容 GBK/GB2312）
+            try {
+                const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+                return utf8Decoder.decode(buffer);
+            } catch (err) {
+                const gbDecoder = new TextDecoder('gb18030', { fatal: false });
+                return gbDecoder.decode(buffer);
+            }
+        }
+
+        // ---------- 分页 ----------
+        function splitIntoPages() {
+            pages = [];
+            let pos = 0;
+            const len = fullText.length;
+            while (pos < len) {
+                let end = Math.min(pos + pageSize, len);
+                if (end < len) {
+                    const nextBreak = fullText.indexOf('\n', end);
+                    const searchLimit = Math.min(end + 200, len);
+                    if (nextBreak !== -1 && nextBreak <= searchLimit) {
+                        end = nextBreak + 1;
+                    }
+                }
+                pages.push(fullText.slice(pos, end));
+                pos = end;
+            }
+            if (pages.length === 0) pages.push('');
+        }
+
+        // 把当前页文本切成句子数组，并用 <span class="sentence"> 包裹渲染
+        function getPageSentences(pageText) {
+            // 按中英文常见句末标点分句，保留标点
+            const matches = pageText.match(/[^。！？!?.\n]+[。！？!?.]*|\n/g) || [pageText];
+            return matches.filter(s => s.trim().length > 0 || s === '\n');
+        }
+
+        function renderPage() {
+            const sentences = getPageSentences(pages[currentPage] || '');
+            content.innerHTML = '';
+            sentences.forEach((s, i) => {
+                const span = document.createElement('span');
+                span.className = 'sentence';
+                span.dataset.idx = i;
+                span.textContent = s;
+                span.title = '点击：从这句开始朗读';
+                span.addEventListener('click', () => {
+                    document.getElementById('startFromInput').value = i + 1;
+                    startReading(true);
+                });
+                content.appendChild(span);
+            });
+            pageInfo.textContent = `第 ${currentPage + 1} / ${pages.length} 页`;
+            pageJump.value = currentPage + 1;
+            prevBtn.disabled = currentPage === 0;
+            nextBtn.disabled = currentPage === pages.length - 1;
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        }
+
+        function prevPage() {
+            if (currentPage > 0) { stopReading(); currentPage--; renderPage(); }
+        }
+        function nextPage() {
+            if (currentPage < pages.length - 1) { stopReading(); currentPage++; renderPage(); }
+        }
+        function jumpToPage() {
+            let target = parseInt(pageJump.value, 10);
+            if (isNaN(target)) return;
+            target = Math.max(1, Math.min(pages.length, target));
+            stopReading();
+            currentPage = target - 1;
+            renderPage();
+        }
+        function onPageSizeChange() {
+            if (!fullText) return;
+            stopReading();
+            pageSize = parseInt(pageSizeSelect.value, 10);
+            splitIntoPages();
+            currentPage = 0;
+            renderPage();
+        }
+        function changeFontSize(delta) {
+            const currentSize = parseFloat(window.getComputedStyle(content).fontSize);
+            content.style.fontSize = (currentSize + delta) + 'px';
+        }
+
+        // ---------- 逐句语音朗读（MiniMax speech-2.8-hd 同步接口 t2a_v2） ----------
+        const voiceSelect = document.getElementById('voiceSelect');
+        const customVoiceInput = document.getElementById('customVoiceInput');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const proxyUrlInput = document.getElementById('proxyUrlInput');
+        const speedRange = document.getElementById('speedRange');
+        const speedVal = document.getElementById('speedVal');
+        const ttsStatus = document.getElementById('ttsStatus');
+        const ttsPlayBtn = document.getElementById('ttsPlayBtn');
+        const ttsPauseBtn = document.getElementById('ttsPauseBtn');
+        const ttsStopBtn = document.getElementById('ttsStopBtn');
+
+        voiceSelect.addEventListener('change', () => {
+            customVoiceInput.style.display = voiceSelect.value === 'custom' ? 'inline-block' : 'none';
+        });
+        speedRange.addEventListener('input', () => { speedVal.textContent = parseFloat(speedRange.value).toFixed(1); });
+
+        let currentAudio = null;
+        let isReading = false;
+        let isPaused = false;
+        let readIndex = 0;
+        let sentenceSpans = [];
+        let ttsAudioEl = null; // 复用同一个 Audio 元素以绕过 iOS 自动播放限制
+
+        // 全局错误兜底：iOS Safari 上普通用户看不到控制台，
+        // 任何没被内部 try/catch 捕获的错误都在这里强制弹窗，避免"静默失败"
+        const debugLog = document.getElementById('debugLog');
+        function logDebug(msg) {
+            debugLog.style.display = 'block';
+            const time = new Date().toLocaleTimeString();
+            debugLog.textContent += `[${time}] ${msg}\n`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+        window.addEventListener('unhandledrejection', function(event) {
+            const msg = (event.reason && event.reason.message) ? event.reason.message : String(event.reason);
+            console.error('未捕获的 Promise 错误：', event.reason);
+            logDebug('未捕获错误：' + msg);
+            alert('出现未处理的错误：' + msg);
+            stopReading();
+        });
+        window.addEventListener('error', function(event) {
+            console.error('脚本错误：', event.error || event.message);
+            logDebug('脚本错误：' + event.message + '（第 ' + event.lineno + ' 行）');
+            alert('脚本出错：' + event.message + '（第 ' + event.lineno + ' 行）');
+        });
+
+        function getVoiceId() {
+            return voiceSelect.value === 'custom' ? (customVoiceInput.value.trim() || 'audiobook_male_1') : voiceSelect.value;
+        }
+
+        async function startReading(useStartFrom) {
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                alert('请先在上方输入你的 MiniMax API Key');
+                return;
+            }
+            sentenceSpans = Array.from(content.querySelectorAll('.sentence')).filter(s => s.textContent.trim().length > 0);
+            if (sentenceSpans.length === 0) {
+                alert('当前页没有可朗读的文本');
+                return;
+            }
+            isReading = true;
+            isPaused = false;
+
+            const startFromInput = document.getElementById('startFromInput');
+            if (useStartFrom) {
+                let start = parseInt(startFromInput.value, 10);
+                if (isNaN(start) || start < 1) start = 1;
+                if (start > sentenceSpans.length) start = sentenceSpans.length;
+                readIndex = start - 1;
+            } else {
+                readIndex = 0;
+                startFromInput.value = 1;
+            }
+
+            ttsPlayBtn.disabled = true;
+            ttsPauseBtn.disabled = false;
+            ttsStopBtn.disabled = false;
+            ttsPauseBtn.textContent = '暂停';
+
+            // 直接使用同一个 Audio 元素播放，且必须在用户点击的调用栈里
+            // 就绪（无论是点按钮还是点句子），这样 iOS 才认可后续异步 play()
+            if (!ttsAudioEl) {
+                ttsAudioEl = new Audio();
+                ttsAudioEl.playsInline = true;
+            }
+            currentAudio = ttsAudioEl;
+
+            await readLoop();
+        }
+
+        async function readLoop() {
+            while (isReading && readIndex < sentenceSpans.length) {
+                if (isPaused) {
+                    await sleep(200);
+                    continue;
+                }
+                const span = sentenceSpans[readIndex];
+                highlightSentence(span);
+                document.getElementById('startFromInput').value = readIndex + 1;
+                try {
+                    // 如果上一句播放到 80% 时已经预取过，直接复用，不用再等一次网络请求
+                    let audioUrl;
+                    if (prefetchCache[readIndex]) {
+                        ttsStatus.textContent = `使用预取音频 (${readIndex + 1}/${sentenceSpans.length})`;
+                        audioUrl = await prefetchCache[readIndex];
+                        delete prefetchCache[readIndex];
+                    }
+                    if (!audioUrl) {
+                        ttsStatus.textContent = `合成中 (${readIndex + 1}/${sentenceSpans.length})...`;
+                        logDebug(`请求合成第 ${readIndex + 1} 句：「${span.textContent.slice(0, 20)}」`);
+                        audioUrl = await synthesize(span.textContent);
+                    }
+                    logDebug('合成成功，开始播放');
+                    if (!isReading) break;
+                    ttsStatus.textContent = `朗读中 (${readIndex + 1}/${sentenceSpans.length})`;
+                    const thisIndex = readIndex;
+                    await playAudio(audioUrl, () => {
+                        // 播放进度到 80% 时，提前把下一句音频生成好，减少句间停顿
+                        prefetchNext(thisIndex + 1);
+                    });
+                    logDebug('播放完成');
+                } catch (err) {
+                    console.error(err);
+                    ttsStatus.textContent = '出错：' + err.message;
+                    alert('朗读出错：' + err.message);
+                    stopReading();
+                    return;
+                }
+                readIndex++;
+            }
+            if (isReading && readIndex >= sentenceSpans.length) {
+                // 自动翻到下一页并继续，若还有下一页
+                ttsStatus.textContent = '本页朗读完毕';
+                if (currentPage < pages.length - 1) {
+                    stopReadingKeepState();
+                    nextPage();
+                    startReading();
+                    return;
+                }
+                stopReading();
+            }
+        }
+
+        // 预取缓存：index -> Promise<audioUrl>，避免重复请求同一句
+        const prefetchCache = {};
+        function prefetchNext(nextIndex) {
+            if (nextIndex >= sentenceSpans.length) return;
+            if (prefetchCache[nextIndex]) return; // 已经在预取或已完成
+            const nextSpan = sentenceSpans[nextIndex];
+            if (!nextSpan) return;
+            logDebug(`提前预取第 ${nextIndex + 1} 句音频`);
+            prefetchCache[nextIndex] = synthesize(nextSpan.textContent).catch(err => {
+                // 预取失败不影响主流程，等真正播放到这句时会自然重试
+                logDebug(`预取第 ${nextIndex + 1} 句失败（不影响主流程，届时会重试）：` + err.message);
+                delete prefetchCache[nextIndex];
+                return null;
+            });
+        }
+
+        function highlightSentence(span) {
+            document.querySelectorAll('.sentence.reading').forEach(s => s.classList.remove('reading'));
+            span.classList.add('reading');
+            span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        // 调用 MiniMax 同步 T2A 接口，返回可播放的音频 URL（data URL）
+        async function synthesize(text) {
+            const apiKey = apiKeyInput.value.trim();
+            const voiceId = getVoiceId();
+            const speed = parseFloat(speedRange.value);
+
+            const proxyUrl = proxyUrlInput.value.trim();
+            const targetUrl = proxyUrl || 'https://api.minimaxi.com/v1/t2a_v2';
+
+            const resp = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + apiKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'speech-2.8-hd',
+                    text: text,
+                    stream: false,
+                    voice_setting: {
+                        voice_id: voiceId,
+                        speed: speed,
+                        vol: 1,
+                        pitch: 0
+                    },
+                    audio_setting: {
+                        sample_rate: 32000,
+                        bitrate: 128000,
+                        format: 'mp3',
+                        channel: 1
+                    }
+                })
+            }).catch(networkErr => {
+                console.error('网络请求失败：', networkErr);
+                throw new Error('请求被拦截（通常是 CORS 跨域限制）。请在"代理地址"里填入你部署的 Cloudflare Worker 地址后重试');
+            });
+
+            if (!resp.ok) {
+                throw new Error('HTTP ' + resp.status);
+            }
+            const json = await resp.json();
+            if (json.base_resp && json.base_resp.status_code !== 0) {
+                throw new Error(json.base_resp.status_msg || '接口返回错误');
+            }
+            const hexAudio = json.data && json.data.audio;
+            if (!hexAudio) {
+                throw new Error('未返回音频数据');
+            }
+            const bytes = hexToBytes(hexAudio);
+            const blob = new Blob([bytes], { type: 'audio/mpeg' });
+            return URL.createObjectURL(blob);
+        }
+
+        function hexToBytes(hex) {
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+            }
+            return bytes;
+        }
+
+        function playAudio(url, onProgress80) {
+            return new Promise((resolve, reject) => {
+                if (!ttsAudioEl) ttsAudioEl = new Audio();
+                currentAudio = ttsAudioEl;
+                currentAudio.src = url;
+                let firedProgress = false;
+                currentAudio.ontimeupdate = () => {
+                    if (!firedProgress && onProgress80 && currentAudio.duration > 0) {
+                        const thresholdInput = document.getElementById('prefetchThresholdInput');
+                        let threshold = parseFloat(thresholdInput.value);
+                        if (isNaN(threshold) || threshold < 1 || threshold > 99) threshold = 60;
+                        if (currentAudio.currentTime / currentAudio.duration >= threshold / 100) {
+                            firedProgress = true;
+                            onProgress80();
+                        }
+                    }
+                };
+                currentAudio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    currentAudio.ontimeupdate = null;
+                    resolve();
+                };
+                currentAudio.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    currentAudio.ontimeupdate = null;
+                    reject(new Error('音频播放失败'));
+                };
+                currentAudio.play().catch(reject);
+            });
+        }
+
+        function togglePause() {
+            if (!isReading) return;
+            isPaused = !isPaused;
+            ttsPauseBtn.textContent = isPaused ? '继续' : '暂停';
+            if (currentAudio) {
+                if (isPaused) currentAudio.pause();
+                else currentAudio.play().catch(() => {});
+            }
+            ttsStatus.textContent = isPaused ? '已暂停' : '朗读中...';
+        }
+
+        function stopReading() {
+            isReading = false;
+            isPaused = false;
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.ontimeupdate = null;
+                currentAudio = null;
+            }
+            // 清理预取缓存，释放尚未使用的 blob URL
+            Object.keys(prefetchCache).forEach(key => {
+                prefetchCache[key].then(url => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+                delete prefetchCache[key];
+            });
+            document.querySelectorAll('.sentence.reading').forEach(s => s.classList.remove('reading'));
+            ttsPlayBtn.disabled = false;
+            ttsPauseBtn.disabled = true;
+            ttsStopBtn.disabled = true;
+            ttsStatus.textContent = '';
+        }
+
+        // 翻页续读时，只重置朗读状态但不清空 UI 提示，避免闪烁
+        function stopReadingKeepState() {
+            isReading = false;
+            isPaused = false;
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.ontimeupdate = null;
+                currentAudio = null;
+            }
+            // 翻页后句子索引全变了，旧页面的预取缓存必须清掉，否则会串句
+            Object.keys(prefetchCache).forEach(key => {
+                prefetchCache[key].then(url => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+                delete prefetchCache[key];
+            });
+        }
+    </script>
+</body>
+</html>
