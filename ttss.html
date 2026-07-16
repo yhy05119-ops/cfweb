@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>流式 TTS 演示 (iOS 兼容)</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 100px; }
+    button { padding: 10px 16px; margin-top: 8px; font-size: 16px; }
+    #status { margin-top: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h2>流式语音合成 Demo</h2>
+  <textarea id="text">真正的危险不是计算机开始像人一样思考，而是人开始像计算机一样思考。</textarea>
+  <br />
+  <button id="playBtn">播放</button>
+  <button id="stopBtn">停止</button>
+  <div id="status">未开始</div>
+
+  <script type="module">
+    import { StreamingTTSPlayer } from './tts-player.js';
+
+    // 替换成你自己的后端代理地址
+    const player = new StreamingTTSPlayer({ wsUrl: 'wss://104.244.92.127:8080/tts' });
+    player.onStatusChange = (status) => {
+      document.getElementById('status').textContent = '状态: ' + status;
+    };
+    player.onError = (err) => {
+      document.getElementById('status').textContent = '错误: ' + err.message;
+    };
+
+    document.getElementById('playBtn').addEventListener('click', () => {
+      // 关键: unlockAudio 必须在这个点击回调里同步调用,iOS 才会放行音频
+      player.unlockAudio();
+      const text = document.getElementById('text').value;
+      player.speak({ text, voiceId: 'male-qn-qingse', model: 'speech-2.8-turbo' });
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      player.stop();
+    });
+  </script>
+</body>
+</html>
