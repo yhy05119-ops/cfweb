@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MiniMax 语音合成调试器</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 800px; margin: auto; }
+        .controls { margin-bottom: 20px; }
+        .input-group { margin-bottom: 10px; }
+        input, textarea { width: 100%; padding: 8px; margin-top: 5px; }
+        #status { padding: 10px; background: #f0f0f0; border-radius: 4px; margin-bottom: 10px; font-weight: bold; }
+        button { padding: 10px 20px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>MiniMax 同步语音合成演示</h1>
+    
+    <div class="controls">
+        <div class="input-group">
+            <label>GroupId: </label><input type="text" id="groupId" placeholder="请输入您的 GroupId">
+        </div>
+        <div class="input-group">
+            <label>API Key: </label><input type="password" id="apiKey" placeholder="请输入您的 API Key">
+        </div>
+        <textarea id="textInput" rows="3">你好，这是 MiniMax 语音合成的流式测试。</textarea>
+        <button onclick="connectAndStart()">连接并开始合成</button>
+        <button onclick="finishTask()">结束任务</button>
+    </div>
+    
+    <div id="status">状态: 未连接</div>
+
+    <script>
+        let ws;
+
+        function updateStatus(msg) {
+            document.getElementById('status').innerText = "状态: " + msg;
+            console.log("WebSocket状态:", msg);
+        }
+
+        // 核心流程：建立连接 -> 接收建连成功 -> 发送任务开始 -> 发送文本
+        function connectAndStart() {
+            const groupId = document.getElementById('groupId').value;
+            const apiKey = document.getElementById('apiKey').value;
+            
+            if (!groupId || !apiKey) {
+                alert("请完整填写 GroupId 和 API Key");
+                return;
+            }
+
+            // 1. 建立 WebSocket 连接
+            const url = `wss://api.minimax.com/ws/v1/t2a_v2?GroupId=${groupId}`;
+            ws = new WebSocket(url);
+
+            ws.onopen = () => updateStatus("已连接到服务器");
+
+            ws.onmessage = (event) => {
+                const res = JSON.parse(event.data);
+                console.log("服务器响应事件:", res.event, res);
+
+                // 2. 建连成功，准备发送 task_start
+                if (res.event === "connected_success") {
+                    updateStatus("建连成功，发送 task_start...");
+                    ws.send(JSON.stringify({
+                        "event": "task_start",
+                        "model": "speech-2.8-turbo",
+                        "voice_setting": { "voice_id": "moss_audio_ce44fc67-7ce3-11f0-8de5-96e35d26fb85" },
+                        "audio_setting": { "format": "mp3" }
+                    }));
+                }
+
+                // 3. 任务启动确认，开始发送文本
+                if (res.event === "task_started") {
+                    updateStatus("任务已启动，正在发送文本...");
+                    ws.send(JSON.stringify({ 
+                        "event": "task_continue", 
+                        "text": document.getElementById('textInput').value 
+                    }));
+                }
+
+                // 4. 处理音频数据
+                if (res.event === "task_continued") {
+                    if (res.data && res.data.audio) {
+                        updateStatus("正在接收音频流...");
+                        console.log("接收到音频分片 (Hex长度):", res.data.audio.length);
+                        // 此处可调用 audioContext 或 MSE 播放
+                    }
+                }
+            };
+
+            ws.onerror = (err) => updateStatus("连接出错，请查看控制台 F12");
+            ws.onclose = () => updateStatus("连接已断开");
+        }
+
+        function finishTask() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ "event": "task_finish" }));
+                updateStatus("发送结束指令");
+            }
+        }
+    </script>
+</body>
+</html>
