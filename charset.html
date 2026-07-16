@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TXT 编码自动识别与转换工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jschardet/3.0.0/jschardet.min.js"></script>
+    <style>
+        .drag-over {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center py-10 px-4">
+
+    <div class="max-w-4xl w-full bg-white rounded-xl shadow-md p-6 md:p-8">
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">TXT 编码自动识别与转换器</h1>
+            <p class="text-sm text-gray-500 mt-1">纯本地安全处理，不上传任何服务器。支持自动识别、手动纠偏、一键导出标准 UTF-8。</p>
+        </div>
+
+        <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors duration-200">
+            <input type="file" id="fileInput" accept=".txt" class="hidden">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p class="mt-4 text-sm text-gray-600">将 TXT 文件拖拽到此处，或 <span class="text-blue-600 font-semibold">点击选择文件</span></p>
+            <p class="text-xs text-gray-400 mt-1">支持：.txt / .log / .lrc 等文本格式</p>
+        </div>
+
+        <div id="controlPanel" class="hidden mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div>
+                    <span class="text-xs font-semibold text-gray-500 uppercase block">当前文件</span>
+                    <span id="fileName" class="text-sm font-medium text-gray-800 truncate block">demo.txt</span>
+                </div>
+                <div>
+                    <span class="text-xs font-semibold text-gray-500 uppercase block">自动识别编码</span>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span id="detectedEncoding" class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded font-mono font-bold">UTF-8</span>
+                        <span id="confidence" class="text-xs text-gray-400">可信度: 100%</span>
+                    </div>
+                </div>
+                <div>
+                    <label for="encodingSelect" class="text-xs font-semibold text-gray-500 uppercase block">若有乱码，手动强制切换：</label>
+                    <select id="encodingSelect" class="mt-1 block w-full rounded border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="UTF-8">UTF-8 (默认/主流)</option>
+                        <option value="GBK">GBK / GB2312 (简中)</option>
+                        <option value="BIG5">BIG5 (繁中)</option>
+                        <option value="UTF-16LE">UTF-16LE (Unicode)</option>
+                        <option value="UTF-16BE">UTF-16BE</option>
+                        <option value="windows-1252">Windows-1252 (西欧)</option>
+                        <option value="ISO-8859-1">ISO-8859-1 (拉丁)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2 justify-end">
+                <button id="downloadBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded shadow transition-colors duration-150 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    导出为 UTF-8 TXT
+                </button>
+            </div>
+        </div>
+
+        <div id="previewContainer" class="hidden mt-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-2">文本预览 (前 20,000 字)：</h3>
+            <textarea id="previewArea" readonly class="w-full h-80 p-4 bg-gray-900 text-gray-100 rounded-lg font-mono text-sm leading-relaxed resize-y border border-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="预览区域"></textarea>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const controlPanel = document.getElementById('controlPanel');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewArea = document.getElementById('previewArea');
+        const fileNameEl = document.getElementById('fileName');
+        const detectedEncodingEl = document.getElementById('detectedEncoding');
+        const confidenceEl = document.getElementById('confidence');
+        const encodingSelect = document.getElementById('encodingSelect');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        let rawBuffer = null;
+        let currentFileName = "";
+
+        // 点击上传
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // 拖拽文件样式处理
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+            }, false);
+        });
+
+        // 拖拽释放
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFile(files[0]);
+            }
+        });
+
+        // 选择文件
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // 文件核心处理逻辑
+        function handleFile(file) {
+            currentFileName = file.name;
+            fileNameEl.textContent = currentFileName;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                rawBuffer = e.target.result;
+                const uint8Array = new Uint8Array(rawBuffer);
+
+                // 1. 先通过前4字节检查标准BOM（Byte Order Mark）
+                let detected = detectBOM(uint8Array);
+
+                // 2. 若无BOM，则使用 jschardet 分析（为保证性能，仅分析前 100KB 内容）
+                if (!detected) {
+                    const sampleSize = Math.min(uint8Array.byteLength, 100000);
+                    let binaryStr = "";
+                    for (let i = 0; i < sampleSize; i++) {
+                        binaryStr += String.fromCharCode(uint8Array[i]);
+                    }
+                    const result = jschardet.detect(binaryStr);
+                    detected = {
+                        encoding: result.encoding ? result.encoding.toUpperCase() : 'UTF-8',
+                        confidence: Math.round(result.confidence * 100)
+                    };
+                }
+
+                // 3. 规范化并显示检测结果
+                let finalEncoding = normalizeEncoding(detected.encoding);
+                detectedEncodingEl.textContent = finalEncoding;
+                confidenceEl.textContent = `可信度: ${detected.confidence}%`;
+
+                // 4. 更新下拉菜单的选中项，并进行解码展示
+                encodingSelect.value = finalEncoding;
+                decodeAndShow(rawBuffer, finalEncoding);
+
+                // 5. 展现界面
+                controlPanel.classList.remove('hidden');
+                previewContainer.classList.remove('hidden');
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // BOM 头检测
+        function detectBOM(arr) {
+            if (arr.length >= 3 && arr[0] === 0xEF && arr[1] === 0xBB && arr[2] === 0xBF) {
+                return { encoding: 'UTF-8', confidence: 100 };
+            }
+            if (arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xFE) {
+                return { encoding: 'UTF-16LE', confidence: 100 };
+            }
+            if (arr.length >= 2 && arr[0] === 0xFE && arr[1] === 0xFF) {
+                return { encoding: 'UTF-16BE', confidence: 100 };
+            }
+            return null;
+        }
+
+        // 规范化常见的字符集名称，兼容浏览器标准的 TextDecoder
+        function normalizeEncoding(enc) {
+            enc = enc.toUpperCase();
+            if (enc.includes('GB2312') || enc.includes('GBK') || enc === 'GB18030') return 'GBK';
+            if (enc.includes('BIG5')) return 'BIG5';
+            if (enc.includes('UTF-8') || enc === 'ASCII') return 'UTF-8';
+            if (enc.includes('UTF-16LE') || enc === 'UTF-16') return 'UTF-16LE';
+            if (enc.includes('UTF-16BE')) return 'UTF-16BE';
+            return enc;
+        }
+
+        // 解码并在预览框中展示
+        function decodeAndShow(buffer, encoding) {
+            try {
+                const decoder = new TextDecoder(encoding);
+                const text = decoder.decode(new Uint8Array(buffer));
+                // 限制预览字数，防止超大文件把网页卡死
+                previewArea.value = text.slice(0, 20000) + (text.length > 20000 ? "\n\n...[内容过长，仅展示前 20,000 字]..." : "");
+            } catch (err) {
+                previewArea.value = `[解码失败]: ${err.message}`;
+            }
+        }
+
+        // 下拉菜单手动强制切换编码
+        encodingSelect.addEventListener('change', (e) => {
+            if (rawBuffer) {
+                decodeAndShow(rawBuffer, e.target.value);
+            }
+        });
+
+        // 导出为 UTF-8 并下载
+        downloadBtn.addEventListener('click', () => {
+            if (!rawBuffer) return;
+            const currentEncoding = encodingSelect.value;
+            try {
+                // 将原文本解码，然后用现代标准的 UTF-8 编码重新打包
+                const decoder = new TextDecoder(currentEncoding);
+                const fullText = decoder.decode(new Uint8Array(rawBuffer));
+                
+                const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                // 保存时增加 [UTF8] 标记防止混淆
+                const nameParts = currentFileName.split('.');
+                const ext = nameParts.pop();
+                a.download = `${nameParts.join('.')}_utf8.${ext}`;
+                document.body.appendChild(a);
+                a.click();
+                
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert(`导出失败: ${err.message}`);
+            }
+        });
+    </script>
+</body>
+</html>
