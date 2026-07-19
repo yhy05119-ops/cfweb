@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f2ecdd">
+<title>纸间 · TXT 阅读器</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/light.css" id="slTheme">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/shoelace-autoloader.js"></script>
+
+<style>
+    :root {
+        /* 宣纸 · 墨 · 朱砂 */
+        --paper: #f2ecdd;
+        --paper-deep: #eae2cd;
+        --sheet-bg: #f7f2e6;
+        --ink: #2b2620;
+        --ink-soft: #8a7d68;
+        --accent: #b03a2e;          /* 朱砂 */
+        --accent-ink: #fdf8ee;
+        --highlight: rgba(176, 58, 46, 0.14);
+        --divider: rgba(43, 38, 32, 0.12);
+        --seal-shadow: 0 6px 18px rgba(176, 58, 46, 0.35);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top: env(safe-area-inset-top, 0px);
+
+        --sl-color-primary-600: var(--accent);
+        --sl-color-primary-500: var(--accent);
+        --sl-input-border-color: var(--divider);
+        --sl-panel-background-color: var(--sheet-bg);
+        --sl-input-background-color: var(--paper);
+        --sl-input-color: var(--ink);
+        --sl-border-radius-medium: 10px;
+    }
+    body.dark {
+        --paper: #17140f;
+        --paper-deep: #100e0a;
+        --sheet-bg: #201c15;
+        --ink: #d8cbae;
+        --ink-soft: #97896e;
+        --accent: #c8552f;
+        --accent-ink: #1a120c;
+        --highlight: rgba(200, 85, 47, 0.20);
+        --divider: rgba(216, 203, 174, 0.14);
+        --seal-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; height: -webkit-fill-available; height: 100dvh; background: var(--paper-deep); overscroll-behavior: none; }
+    button, sl-button, .play-btn { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        display: flex; flex-direction: column; overflow: hidden;
+        transition: background .35s, color .35s;
+        padding-top: var(--safe-top);
+    }
+    .app-shell {
+        max-width: 760px; margin: 0 auto; width: 100%; height: 100%;
+        display: flex; flex-direction: column; position: relative;
+        background:
+            radial-gradient(circle at 20% 0%, rgba(255,255,255,.35), transparent 55%),
+            var(--paper);
+        box-shadow: 0 0 40px rgba(0,0,0,.08);
+        transition: background .35s;
+    }
+    body.dark .app-shell { background: var(--paper); }
+
+    /* ── 顶栏:书脊题签 ── */
+    #topBar {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 16px 10px;
+        border-bottom: 1px solid var(--divider);
+        flex-shrink: 0;
+        position: relative;
+    }
+    #topBar::after {
+        /* 双细线,线装书封面题签的边框感 */
+        content: ""; position: absolute; left: 16px; right: 16px; bottom: 3px;
+        border-bottom: 1px solid var(--divider);
+    }
+    #openLabel {
+        cursor: pointer; font-size: 13px; letter-spacing: .12em;
+        color: var(--accent); border: 1px solid var(--accent);
+        border-radius: 4px; padding: 4px 10px; white-space: nowrap;
+        transition: background .2s, color .2s;
+    }
+    #openLabel:active { background: var(--accent); color: var(--accent-ink); }
+    #bookTitle {
+        flex: 1; font-size: 14px; letter-spacing: .06em;
+        font-family: "Songti SC","Noto Serif SC","SimSun",serif;
+        color: var(--ink); overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; text-align: center;
+    }
+    #fileInput { display: none; }
+    .font-btn {
+        border: none; background: none; color: var(--ink-soft);
+        font-family: "Songti SC","Noto Serif SC",serif;
+        font-size: 15px; padding: 4px 6px; cursor: pointer; border-radius: 6px;
+    }
+    .font-btn:active { background: var(--divider); color: var(--ink); }
+    .font-btn b { font-size: 18px; font-weight: 600; }
+
+    /* ── 正文 ── */
+    #readerArea { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 30px 26px 130px; }
+    body.hidden-chrome #readerArea { padding: 24px 26px; }
+    #content {
+        font-family: "Songti SC","Noto Serif SC","SimSun",serif;
+        font-size: 19px; line-height: 2.2; letter-spacing: .03em;
+        white-space: pre-wrap; word-wrap: break-word; margin: 0; color: var(--ink);
+    }
+    .sentence { cursor: pointer; border-radius: 3px; transition: background-color .25s, box-shadow .25s; }
+    .sentence.reading {
+        background-color: var(--highlight);
+        box-shadow: 0 0 0 2px var(--highlight);
+        border-bottom: 2px solid var(--accent);
+    }
+    .play-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.7em; height: 1.7em; min-width: 24px; min-height: 24px;
+        margin-right: .35em; border-radius: 50%; border: 1px solid var(--divider); padding: 0;
+        background: transparent; color: var(--ink-soft); font-size: .72em;
+        vertical-align: middle; cursor: pointer; transform: translateY(-.12em);
+        -webkit-appearance: none; transition: all .2s;
+    }
+    .play-btn:active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+    /* ── 章节题名与页码 ── */
+    #chapterLabel {
+        font-size: 12px; letter-spacing: .3em; color: var(--ink-soft);
+        font-family: "Songti SC","Noto Serif SC",serif;
+        text-align: center; padding: 6px 20px 0;
+    }
+    #chapterLabel:not(:empty)::before, #chapterLabel:not(:empty)::after {
+        content: "·"; color: var(--accent); margin: 0 .6em;
+    }
+    #pageNav { display: none; align-items: center; gap: 10px; padding: 4px 18px 6px; flex-shrink: 0; font-size: 13px; color: var(--ink-soft); }
+    #pageInfo { font-variant-numeric: tabular-nums; letter-spacing: .05em; }
+    body.hidden-chrome #pageNav, body.hidden-chrome #chapterLabel, body.hidden-chrome #topBar,
+    body.hidden-chrome #bottomNav, body.hidden-chrome #listenBtn, body.hidden-chrome #listenStopBadge, body.hidden-chrome #ttsStatus { display: none; }
+
+    /* ── 底部导航 ── */
+    #bottomNav {
+        display: flex; justify-content: space-around; align-items: center;
+        padding: 8px 0 calc(8px + var(--safe-bottom));
+        border-top: 1px solid var(--divider); flex-shrink: 0;
+        background: var(--sheet-bg);
+    }
+    #bottomNav sl-button::part(base) { flex-direction: column; height: auto; gap: 3px; padding: 4px 12px; color: var(--ink-soft); }
+    #bottomNav sl-button:active::part(base) { color: var(--accent); }
+    #bottomNav .icon { font-size: 19px; line-height: 1; }
+    #bottomNav .navlabel { font-size: 11px; letter-spacing: .1em; }
+
+    /* ── 签名元素:朱砂印章"听" ── */
+    #listenBtn { position: absolute; right: 22px; bottom: 96px; width: 62px; height: 62px; z-index: 25; }
+    #listenBtn::part(base) {
+        border-radius: 14px;               /* 方章 */
+        width: 62px; height: 62px;
+        font-family: "Songti SC","Noto Serif SC","SimSun",serif;
+        font-size: 24px; font-weight: 700;
+        background: var(--accent); border: 2px solid var(--accent-ink);
+        outline: 2px solid var(--accent);
+        color: var(--accent-ink);
+        box-shadow: var(--seal-shadow);
+        transform: rotate(-4deg);          /* 盖章的微斜 */
+        transition: transform .2s;
+    }
+    #listenBtn:active::part(base) { transform: rotate(-4deg) scale(.94); }
+    #listenBtn.playing::part(base) { background: var(--ink); outline-color: var(--ink); color: var(--paper); }
+    #listenStopBadge { position: absolute; right: 14px; bottom: 156px; z-index: 26; display: none; }
+    #listenStopBadge::part(base) { border-radius: 50%; width: 26px; height: 26px; font-size: 12px; background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    #ttsStatus {
+        position: absolute; right: 22px; bottom: 168px;
+        font-size: 11px; color: var(--ink-soft);
+        background: var(--sheet-bg); border: 1px solid var(--divider);
+        padding: 4px 12px; border-radius: 12px; max-width: 210px; text-align: right; z-index: 24;
+    }
+    #ttsStatus:empty { display: none; }
+
+    /* ── 抽屉 ── */
+    sl-drawer::part(panel) { background: var(--sheet-bg); border-radius: 18px 18px 0 0; }
+    sl-drawer::part(title) {
+        color: var(--ink); font-size: 15px; letter-spacing: .15em;
+        font-family: "Songti SC","Noto Serif SC",serif;
+    }
+    sl-drawer::part(body) { color: var(--ink); }
+    .field-row { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 14px; align-items: end; }
+    .field-row sl-input, .field-row sl-select { max-width: 170px; }
+    .fw-label { font-size: 12px; color: var(--ink-soft); margin-bottom: 3px; letter-spacing: .05em; }
+    #chapterList { border-top: 1px solid var(--divider); padding-top: 6px; }
+    #chapterList sl-button::part(base) {
+        justify-content: flex-start; width: 100%; color: var(--ink);
+        font-family: "Songti SC","Noto Serif SC",serif;
+    }
+    #chapterList sl-button.active::part(base) { color: var(--accent); font-weight: 700; }
+    #chapterList sl-button.active::part(label)::before { content: "▸ "; }
+    #debugLog { font-size: 11px; color: var(--ink-soft); background: var(--paper); border: 1px solid var(--divider); border-radius: 10px; padding: 8px 10px; max-height: 110px; overflow-y: auto; white-space: pre-wrap; display: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; }
+    }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+    <div id="topBar">
+        <label for="fileInput" id="openLabel" title="打开 TXT 文件">开卷</label>
+        <input type="file" id="fileInput" accept=".txt,text/plain">
+        <span id="bookTitle">纸间 · 选择 TXT 文件开始阅读</span>
+        <button class="font-btn" onclick="changeFontSize(-1)" title="缩小字体">字</button>
+        <button class="font-btn" onclick="changeFontSize(1)" title="放大字体"><b>字</b></button>
+    </div>
+
+    <div id="readerArea">
+        <pre id="content">点击左上角「开卷」选择本地 TXT 文件。
+
+正文中每句话前的 ▶ 可从该句开始朗读;
+右下角朱砂印「听」一键从头朗读本页。</pre>
+    </div>
+
+    <span id="ttsStatus"></span>
+    <sl-icon-button id="listenStopBadge" name="x" label="停止" onclick="stopReading()"></sl-icon-button>
+    <sl-button id="listenBtn" onclick="handleListenTap()">听</sl-button>
+
+    <div id="chapterLabel"></div>
+    <div id="pageNav">
+        <sl-button id="prevBtn" size="small" variant="text" onclick="prevPage()">上一页</sl-button>
+        <sl-range id="pageSlider" min="1" max="1" value="1" style="flex:1;"></sl-range>
+        <span id="pageInfo">1 / 1</span>
+        <sl-button id="nextBtn" size="small" variant="text" onclick="nextPage()">下一页</sl-button>
+    </div>
+
+    <div id="bottomNav">
+        <sl-button variant="text" onclick="document.getElementById('drawerCatalog').show()">
+            <span class="icon">📖</span><span class="navlabel">目录</span>
+        </sl-button>
+        <sl-button variant="text" id="darkToggleBtn" onclick="toggleDark()">
+            <span class="icon">🌙</span><span class="navlabel">夜间</span>
+        </sl-button>
+        <sl-button variant="text" onclick="document.getElementById('drawerVoice').show()">
+            <span class="icon">🔊</span><span class="navlabel">朗读</span>
+        </sl-button>
+        <sl-button variant="text" onclick="document.getElementById('drawerMore').show()">
+            <span class="icon">⋯</span><span class="navlabel">更多</span>
+        </sl-button>
+    </div>
+
+    <!-- 目录 / 翻页 -->
+    <sl-drawer id="drawerCatalog" label="目录 · 翻页" placement="bottom" class="drawer-contained">
+        <div class="field-row">
+            <div>
+                <div class="fw-label">分页方式</div>
+                <sl-select id="paginationModeSelect" value="chapter">
+                    <sl-option value="chapter">按章节</sl-option>
+                    <sl-option value="chars">按字数</sl-option>
+                </sl-select>
+            </div>
+            <div id="pageSizeField">
+                <div class="fw-label">每页字数</div>
+                <sl-select id="pageSizeSelect" value="1000">
+                    <sl-option value="500">500</sl-option>
+                    <sl-option value="1000">1000</sl-option>
+                    <sl-option value="2000">2000</sl-option>
+                    <sl-option value="4000">4000</sl-option>
+                </sl-select>
+            </div>
+        </div>
+        <p id="chapterFallbackHint" style="display:none; font-size:12px; color:var(--ink-soft); margin:0 0 10px;">没识别到"第…章"这类章节标题,已自动按字数分页。</p>
+        <div class="field-row">
+            <div>
+                <div class="fw-label">跳转到第几页</div>
+                <sl-input id="pageJump" type="number" min="1" value="1" style="width:100px;"></sl-input>
+            </div>
+            <sl-button variant="default" onclick="jumpToPage()">跳转</sl-button>
+        </div>
+        <div id="chapterList"></div>
+    </sl-drawer>
+
+    <!-- 朗读设置 -->
+    <sl-drawer id="drawerVoice" label="朗读设置" placement="bottom">
+        <div class="field-row">
+            <sl-input id="apiKeyInput" type="password" label="API Key" placeholder="MiniMax API Key" password-toggle style="max-width:220px;"></sl-input>
+        </div>
+        <div class="field-row">
+            <sl-select id="voiceSelect" label="音色" value="audiobook_male_1">
+                <sl-option value="audiobook_male_1">audiobook_male_1(男声·朗读)</sl-option>
+                <sl-option value="audiobook_female_1">audiobook_female_1(女声·朗读)</sl-option>
+                <sl-option value="male-qn-qingse">male-qn-qingse(男声·阳光)</sl-option>
+                <sl-option value="female-shaonv">female-shaonv(女声·少女)</sl-option>
+                <sl-option value="custom">自定义 voice_id...</sl-option>
+            </sl-select>
+            <sl-input id="customVoiceInput" label="自定义 voice_id" style="display:none; max-width:160px;"></sl-input>
+        </div>
+        <div class="field-row">
+            <div style="flex:1; min-width:160px;">
+                <div class="fw-label">语速 <span id="speedVal">1.0</span></div>
+                <sl-range id="speedRange" min="0.5" max="2" step="0.1" value="1"></sl-range>
+            </div>
+            <sl-input id="prefetchThresholdInput" type="number" label="预取阈值(%)" min="1" max="99" value="60" style="width:110px;"></sl-input>
+        </div>
+        <div class="field-row">
+            <sl-input id="startFromInput" type="number" label="从第几句开始" min="1" value="1" style="width:110px;"></sl-input>
+            <sl-button onclick="startReading(true)" style="align-self:end;">跳转朗读</sl-button>
+        </div>
+        <sl-divider></sl-divider>
+        <div class="field-row">
+            <sl-button id="ttsPlayBtn" variant="primary" onclick="startReading()">▶ 从头朗读本页</sl-button>
+            <sl-button id="ttsPauseBtn" disabled onclick="togglePause()">暂停</sl-button>
+            <sl-button id="ttsStopBtn" disabled onclick="stopReading()">停止</sl-button>
+        </div>
+    </sl-drawer>
+
+    <!-- 高级参数 -->
+    <sl-drawer id="drawerMore" label="高级参数" placement="bottom">
+        <div class="field-row">
+            <sl-select id="modelSelect" label="模型" value="speech-2.8-hd" style="width:170px;">
+                <sl-option value="speech-2.8-hd">speech-2.8-hd</sl-option>
+                <sl-option value="speech-2.8-turbo">speech-2.8-turbo</sl-option>
+                <sl-option value="speech-2.6-hd">speech-2.6-hd</sl-option>
+                <sl-option value="speech-2.6-turbo">speech-2.6-turbo</sl-option>
+                <sl-option value="speech-02-hd">speech-02-hd</sl-option>
+                <sl-option value="speech-02-turbo">speech-02-turbo</sl-option>
+                <sl-option value="speech-01-hd">speech-01-hd</sl-option>
+                <sl-option value="speech-01-turbo">speech-01-turbo</sl-option>
+            </sl-select>
+            <sl-input id="volInput" type="number" label="音量" min="0.1" max="10" step="0.1" value="1" style="width:90px;"></sl-input>
+            <sl-input id="pitchInput" type="number" label="语调" min="-12" max="12" value="0" style="width:90px;"></sl-input>
+        </div>
+        <div class="field-row">
+            <sl-select id="emotionSelect" label="情绪" value="" style="width:150px;">
+                <sl-option value="">不指定</sl-option>
+                <sl-option value="happy">happy 高兴</sl-option>
+                <sl-option value="sad">sad 悲伤</sl-option>
+                <sl-option value="angry">angry 愤怒</sl-option>
+                <sl-option value="fearful">fearful 害怕</sl-option>
+                <sl-option value="disgusted">disgusted 厌恶</sl-option>
+                <sl-option value="surprised">surprised 惊讶</sl-option>
+                <sl-option value="calm">calm 平静</sl-option>
+            </sl-select>
+            <sl-select id="languageBoostSelect" label="语言增强" value="auto" style="width:150px;">
+                <sl-option value="auto">auto</sl-option>
+                <sl-option value="Chinese">Chinese</sl-option>
+                <sl-option value="English">English</sl-option>
+                <sl-option value="Chinese,Yue">粤语</sl-option>
+                <sl-option value="Japanese">Japanese</sl-option>
+                <sl-option value="Korean">Korean</sl-option>
+            </sl-select>
+        </div>
+        <div class="field-row">
+            <sl-select id="sampleRateSelect" label="采样率" value="32000" style="width:110px;">
+                <sl-option value="8000">8000</sl-option><sl-option value="16000">16000</sl-option>
+                <sl-option value="22050">22050</sl-option><sl-option value="24000">24000</sl-option>
+                <sl-option value="32000">32000</sl-option><sl-option value="44100">44100</sl-option>
+            </sl-select>
+            <sl-select id="bitrateSelect" label="比特率" value="128000" style="width:110px;">
+                <sl-option value="32000">32000</sl-option><sl-option value="64000">64000</sl-option>
+                <sl-option value="128000">128000</sl-option><sl-option value="256000">256000</sl-option>
+            </sl-select>
+            <sl-select id="formatSelect" label="格式" value="mp3" style="width:100px;">
+                <sl-option value="mp3">mp3</sl-option><sl-option value="wav">wav</sl-option>
+                <sl-option value="pcm">pcm</sl-option><sl-option value="flac">flac</sl-option>
+            </sl-select>
+            <sl-select id="channelSelect" label="声道" value="1" style="width:100px;">
+                <sl-option value="1">单声道</sl-option><sl-option value="2">双声道</sl-option>
+            </sl-select>
+        </div>
+        <div class="field-row">
+            <sl-button variant="default" outline onclick="resetAdvancedSettings()">恢复默认</sl-button>
+            <sl-button variant="default" outline onclick="clearSavedSettings()">清除本地保存的配置</sl-button>
+        </div>
+        <sl-divider></sl-divider>
+        <div id="debugLog"></div>
+    </sl-drawer>
+
+<script>
+    // ================= 页面读取与分页(含章节识别) =================
+    const fileInput = document.getElementById('fileInput');
+    const content = document.getElementById('content');
+    const bookTitle = document.getElementById('bookTitle');
+    const readerArea = document.getElementById('readerArea');
+    const pageNav = document.getElementById('pageNav');
+    const pageInfo = document.getElementById('pageInfo');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const pageSlider = document.getElementById('pageSlider');
+    const pageJump = document.getElementById('pageJump');
+    const chapterLabel = document.getElementById('chapterLabel');
+    const chapterList = document.getElementById('chapterList');
+    const chapterFallbackHint = document.getElementById('chapterFallbackHint');
+    const pageSizeField = document.getElementById('pageSizeField');
+
+    let fullText = '';
+    let pages = [];
+    let chapterTitles = [];
+    let isChapterMode = false;
+    let currentPage = 0;
+    let pageSize = 1000;
+    let paginationMode = 'chapter';
+    let fontSize = 19;
+
+    function decodeText(buffer) {
+        try { return new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+        catch { return new TextDecoder('gb18030', { fatal: false }).decode(buffer); }
+    }
+
+    function splitByChars(text, size) {
+        const out = [];
+        let pos = 0;
+        const len = text.length;
+        while (pos < len) {
+            let end = Math.min(pos + size, len);
+            if (end < len) {
+                const nextBreak = text.indexOf('\n', end);
+                const searchLimit = Math.min(end + 200, len);
+                if (nextBreak !== -1 && nextBreak <= searchLimit) end = nextBreak + 1;
+            }
+            out.push(text.slice(pos, end));
+            pos = end;
+        }
+        if (out.length === 0) out.push('');
+        return out;
+    }
+
+    // 最直接的正则:一行里出现"第...章"就算章节标题
+    const CHAPTER_RE = /第.*章/gm;
+    function splitByChapters(text) {
+        const matches = [...text.matchAll(CHAPTER_RE)];
+        if (matches.length < 2) return null;
+        const outPages = [];
+        const titles = [];
+        if (matches[0].index > 0 && text.slice(0, matches[0].index).trim()) {
+            outPages.push(text.slice(0, matches[0].index));
+            titles.push('序');
+        }
+        for (let i = 0; i < matches.length; i++) {
+            const start = matches[i].index;
+            const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+            outPages.push(text.slice(start, end));
+            titles.push(matches[i][0].trim());
+        }
+        return { pages: outPages, titles };
+    }
+
+    function rebuildPages() {
+        if (!fullText) { pages = []; return; }
+        if (paginationMode === 'chapter') {
+            const result = splitByChapters(fullText);
+            if (result) {
+                pages = result.pages;
+                chapterTitles = result.titles;
+                isChapterMode = true;
+                chapterFallbackHint.style.display = 'none';
+                pageSizeField.style.display = 'none';
+                renderChapterList();
+                return;
+            }
+            chapterFallbackHint.style.display = 'block';
+        } else {
+            chapterFallbackHint.style.display = 'none';
+        }
+        pages = splitByChars(fullText, pageSize);
+        chapterTitles = [];
+        isChapterMode = false;
+        pageSizeField.style.display = paginationMode === 'chars' ? 'block' : 'none';
+        chapterList.innerHTML = '';
+    }
+
+    function renderChapterList() {
+        chapterList.innerHTML = '';
+        chapterTitles.forEach((title, i) => {
+            const btn = document.createElement('sl-button');
+            btn.setAttribute('variant', 'text');
+            btn.textContent = title;
+            if (i === currentPage) btn.classList.add('active');
+            btn.addEventListener('click', () => {
+                stopReading();
+                currentPage = i;
+                renderPage();
+                document.getElementById('drawerCatalog').hide();
+            });
+            chapterList.appendChild(btn);
+        });
+    }
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        stopReading();
+        bookTitle.textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            fullText = decodeText(ev.target.result);
+            currentPage = 0;
+            rebuildPages();
+            renderPage();
+            pageNav.style.display = 'flex';
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function onPaginationModeChange(mode) {
+        paginationMode = mode;
+        stopReading();
+        currentPage = 0;
+        rebuildPages();
+        renderPage();
+    }
+    function onPageSizeChange(size) {
+        pageSize = parseInt(size, 10);
+        stopReading();
+        currentPage = 0;
+        rebuildPages();
+        renderPage();
+    }
+
+    // 把一页文本切成句子数组,readIdx 只给可朗读的句子编号
+    function getPageSentences(pageText) {
+        const matches = pageText.match(/[^。！？!?.\n]+[。！？!?.]*|\n/g) || [pageText];
+        const filtered = matches.filter(s => s.trim().length > 0 || s === '\n');
+        let readIdx = 0;
+        return filtered.map(s => {
+            if (s === '\n') return { text: s, isBreak: true, readIdx: -1 };
+            const item = { text: s, isBreak: false, readIdx };
+            readIdx++;
+            return item;
+        });
+    }
+
+    function renderPage() {
+        const sentences = getPageSentences(pages[currentPage] || '');
+        const frag = document.createDocumentFragment();
+        sentences.forEach(s => {
+            if (s.isBreak) {
+                frag.appendChild(document.createTextNode('\n'));
+                return;
+            }
+            const btn = document.createElement('button');
+            btn.className = 'play-btn';
+            btn.dataset.idx = s.readIdx;
+            btn.textContent = '▶';
+            btn.title = '从这句开始朗读';
+            frag.appendChild(btn);
+
+            const span = document.createElement('span');
+            span.className = 'sentence';
+            span.dataset.idx = s.readIdx;
+            span.textContent = s.text;
+            frag.appendChild(span);
+        });
+        content.innerHTML = '';
+        content.appendChild(frag);
+
+        pageInfo.textContent = `${currentPage + 1} / ${pages.length}`;
+        pageJump.value = currentPage + 1;
+        pageSlider.max = pages.length;
+        pageSlider.value = currentPage + 1;
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = currentPage === pages.length - 1;
+        prevBtn.textContent = isChapterMode ? '上一章' : '上一页';
+        nextBtn.textContent = isChapterMode ? '下一章' : '下一页';
+        chapterLabel.textContent = isChapterMode && chapterTitles[currentPage] ? chapterTitles[currentPage] : '';
+        readerArea.scrollTop = 0;
+        if (isChapterMode) renderChapterList();
+    }
+
+    content.addEventListener('click', (e) => {
+        const playBtn = e.target.closest('.play-btn');
+        if (playBtn) {
+            e.stopPropagation();
+            startFromInput.value = parseInt(playBtn.dataset.idx, 10) + 1;
+            startReading(true);
+            return;
+        }
+        e.stopPropagation();
+        toggleChrome();
+    });
+    readerArea.addEventListener('click', () => toggleChrome());
+    function toggleChrome() { document.body.classList.toggle('hidden-chrome'); }
+
+    function prevPage() { if (currentPage > 0) { stopReading(); currentPage--; renderPage(); } }
+    function nextPage() { if (currentPage < pages.length - 1) { stopReading(); currentPage++; renderPage(); } }
+    function jumpToPage() {
+        let target = parseInt(pageJump.value, 10);
+        if (isNaN(target)) return;
+        target = Math.max(1, Math.min(pages.length, target));
+        stopReading();
+        currentPage = target - 1;
+        renderPage();
+        document.getElementById('drawerCatalog').hide();
+    }
+    function onSliderInput(v) {
+        let target = parseInt(v, 10);
+        target = Math.max(1, Math.min(pages.length, target));
+        if (target - 1 === currentPage) return;
+        stopReading();
+        currentPage = target - 1;
+        renderPage();
+    }
+    function changeFontSize(delta) {
+        fontSize = Math.max(12, Math.min(32, fontSize + delta * 2));
+        content.style.fontSize = fontSize + 'px';
+        saveSettings();
+    }
+    function toggleDark() {
+        document.body.classList.toggle('dark');
+        document.getElementById('darkToggleBtn').classList.toggle('active');
+        saveSettings();
+    }
+
+    // ================= 朗读(MiniMax speech-2.8-hd 同步接口 t2a_v2) =================
+    const voiceSelect = document.getElementById('voiceSelect');
+    const customVoiceInput = document.getElementById('customVoiceInput');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const speedRange = document.getElementById('speedRange');
+    const speedVal = document.getElementById('speedVal');
+    const ttsStatus = document.getElementById('ttsStatus');
+    const ttsPlayBtn = document.getElementById('ttsPlayBtn');
+    const ttsPauseBtn = document.getElementById('ttsPauseBtn');
+    const ttsStopBtn = document.getElementById('ttsStopBtn');
+    const listenBtn = document.getElementById('listenBtn');
+    const listenStopBadge = document.getElementById('listenStopBadge');
+    const startFromInput = document.getElementById('startFromInput');
+    const prefetchThresholdInput = document.getElementById('prefetchThresholdInput');
+    const modelSelect = document.getElementById('modelSelect');
+    const volInput = document.getElementById('volInput');
+    const pitchInput = document.getElementById('pitchInput');
+    const emotionSelect = document.getElementById('emotionSelect');
+    const languageBoostSelect = document.getElementById('languageBoostSelect');
+    const sampleRateSelect = document.getElementById('sampleRateSelect');
+    const bitrateSelect = document.getElementById('bitrateSelect');
+    const formatSelect = document.getElementById('formatSelect');
+    const channelSelect = document.getElementById('channelSelect');
+
+    function onVoiceChange(v) {
+        customVoiceInput.style.display = v === 'custom' ? 'inline-block' : 'none';
+    }
+
+    let currentAudio = null, isReading = false, isPaused = false, readIndex = 0;
+    let sentenceSpans = [];
+    let ttsAudioEl = null;
+    const prefetchCache = {};
+
+    const debugLog = document.getElementById('debugLog');
+    function logDebug(msg) {
+        debugLog.style.display = 'block';
+        const time = new Date().toLocaleTimeString();
+        const lines = debugLog.textContent ? debugLog.textContent.split('\n') : [];
+        lines.push(`[${time}] ${msg}`);
+        if (lines.length > 200) lines.splice(0, lines.length - 200);
+        debugLog.textContent = lines.join('\n');
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+    window.addEventListener('unhandledrejection', (event) => {
+        const msg = event.reason && event.reason.message ? event.reason.message : String(event.reason);
+        logDebug('未捕获错误:' + msg);
+        alert('出现未处理的错误:' + msg);
+        stopReading();
+    });
+    window.addEventListener('error', (event) => {
+        logDebug(`脚本错误:${event.message}(第 ${event.lineno} 行)`);
+    });
+
+    function getVoiceId() {
+        return voiceSelect.value === 'custom' ? (customVoiceInput.value.trim() || 'audiobook_male_1') : voiceSelect.value;
+    }
+
+    function handleListenTap() {
+        if (!isReading) startReading();
+        else togglePause();
+    }
+    function updateListenBtnUI() {
+        if (isReading && !isPaused) {
+            listenBtn.textContent = '⏸'; listenBtn.classList.add('playing'); listenStopBadge.style.display = 'flex';
+        } else if (isReading && isPaused) {
+            listenBtn.textContent = '▶'; listenBtn.classList.add('playing'); listenStopBadge.style.display = 'flex';
+        } else {
+            listenBtn.textContent = '听'; listenBtn.classList.remove('playing'); listenStopBadge.style.display = 'none';
+        }
+    }
+
+    async function startReading(useStartFrom) {
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+            alert('请先在"朗读"设置里输入你的 MiniMax API Key');
+            document.getElementById('drawerVoice').show();
+            return;
+        }
+        sentenceSpans = Array.from(content.querySelectorAll('.sentence')).filter(s => s.textContent.trim().length > 0);
+        if (sentenceSpans.length === 0) { alert('当前页没有可朗读的文本'); return; }
+        isReading = true; isPaused = false;
+
+        if (useStartFrom) {
+            let start = parseInt(startFromInput.value, 10);
+            if (isNaN(start) || start < 1) start = 1;
+            if (start > sentenceSpans.length) start = sentenceSpans.length;
+            readIndex = start - 1;
+        } else {
+            readIndex = 0;
+            startFromInput.value = 1;
+        }
+
+        ttsPlayBtn.disabled = true; ttsPauseBtn.disabled = false; ttsStopBtn.disabled = false;
+        ttsPauseBtn.textContent = '暂停';
+        updateListenBtnUI();
+
+        if (!ttsAudioEl) { ttsAudioEl = new Audio(); ttsAudioEl.playsInline = true; ttsAudioEl.preload = 'auto'; }
+        currentAudio = ttsAudioEl;
+        unlockAudioForIOS();
+        setupMediaSession();
+
+        await readLoop();
+    }
+
+    async function readLoop() {
+        while (isReading && readIndex < sentenceSpans.length) {
+            if (isPaused) { await sleep(200); continue; }
+            const span = sentenceSpans[readIndex];
+            highlightSentence(span);
+            startFromInput.value = readIndex + 1;
+            try {
+                let audioUrl;
+                if (prefetchCache[readIndex]) {
+                    ttsStatus.textContent = `使用预取音频 (${readIndex + 1}/${sentenceSpans.length})`;
+                    audioUrl = await prefetchCache[readIndex];
+                    delete prefetchCache[readIndex];
+                }
+                if (!audioUrl) {
+                    ttsStatus.textContent = `合成中 (${readIndex + 1}/${sentenceSpans.length})...`;
+                    logDebug(`请求合成第 ${readIndex + 1} 句:「${span.textContent.slice(0, 20)}」`);
+                    audioUrl = await synthesize(span.textContent);
+                }
+                logDebug('合成成功,开始播放');
+                if (!isReading) break;
+                ttsStatus.textContent = `朗读中 (${readIndex + 1}/${sentenceSpans.length})`;
+                const thisIndex = readIndex;
+                await playAudio(audioUrl, () => prefetchNext(thisIndex + 1));
+                logDebug('播放完成');
+            } catch (err) {
+                console.error(err);
+                ttsStatus.textContent = '出错:' + err.message;
+                alert('朗读出错:' + err.message);
+                stopReading();
+                return;
+            }
+            readIndex++;
+        }
+        if (isReading && readIndex >= sentenceSpans.length) {
+            ttsStatus.textContent = '本页朗读完毕';
+            if (currentPage < pages.length - 1) {
+                stopReadingKeepState();
+                nextPage();
+                setTimeout(() => startReading(), 50);
+                return;
+            }
+            stopReading();
+        }
+    }
+
+    function prefetchNext(nextIndex) {
+        if (nextIndex >= sentenceSpans.length) return;
+        if (prefetchCache[nextIndex]) return;
+        const nextSpan = sentenceSpans[nextIndex];
+        if (!nextSpan) return;
+        logDebug(`提前预取第 ${nextIndex + 1} 句音频`);
+        prefetchCache[nextIndex] = synthesize(nextSpan.textContent).catch(err => {
+            logDebug(`预取第 ${nextIndex + 1} 句失败(届时会重试):` + err.message);
+            delete prefetchCache[nextIndex];
+            return null;
+        });
+    }
+
+    function highlightSentence(span) {
+        document.querySelectorAll('.sentence.reading').forEach(s => s.classList.remove('reading'));
+        span.classList.add('reading');
+        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // iOS Safari:audio 元素必须在用户手势内先 play 一次才能之后由代码播放。
+    // 这里在手势内同步播放一段极短的静音 wav 完成"解锁"。
+    let audioUnlocked = false;
+    const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+    function unlockAudioForIOS() {
+        if (audioUnlocked || !ttsAudioEl) return;
+        try {
+            ttsAudioEl.src = SILENT_WAV;
+            const p = ttsAudioEl.play();
+            if (p && p.catch) p.catch(() => {});
+            audioUnlocked = true;
+        } catch (e) { /* 忽略,首句播放时再尝试 */ }
+    }
+
+    // 锁屏 / 控制中心播放控制(iOS 支持 Media Session)
+    function setupMediaSession() {
+        if (!('mediaSession' in navigator)) return;
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: bookTitle.textContent || '纸间阅读器',
+                artist: chapterLabel.textContent || 'TXT 朗读',
+            });
+            navigator.mediaSession.setActionHandler('play', () => { if (isReading && isPaused) togglePause(); });
+            navigator.mediaSession.setActionHandler('pause', () => { if (isReading && !isPaused) togglePause(); });
+            navigator.mediaSession.setActionHandler('stop', () => stopReading());
+        } catch (e) { /* 部分旧版本不支持全部 action */ }
+    }
+
+    async function synthesize(text) {
+        const voiceSetting = { voice_id: getVoiceId(), speed: parseFloat(speedRange.value), vol: parseFloat(volInput.value) || 1, pitch: parseInt(pitchInput.value, 10) || 0 };
+        if (emotionSelect.value) voiceSetting.emotion = emotionSelect.value;
+        const format = formatSelect.value;
+
+        const resp = await fetch('https://api.minimaxi.com/v1/t2a_v2', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + apiKeyInput.value.trim(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: modelSelect.value,
+                text, stream: false,
+                language_boost: languageBoostSelect.value,
+                voice_setting: voiceSetting,
+                audio_setting: {
+                    sample_rate: parseInt(sampleRateSelect.value, 10),
+                    bitrate: parseInt(bitrateSelect.value, 10),
+                    format, channel: parseInt(channelSelect.value, 10),
+                },
+            }),
+        }).catch(networkErr => {
+            console.error('网络请求失败:', networkErr);
+            throw new Error('网络请求失败(可能是 CORS 跨域限制或网络问题)');
+        });
+
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const json = await resp.json();
+        if (json.base_resp && json.base_resp.status_code !== 0) throw new Error(json.base_resp.status_msg || '接口返回错误');
+        const hexAudio = json.data && json.data.audio;
+        if (!hexAudio) throw new Error('未返回音频数据');
+        const bytes = new Uint8Array(hexAudio.length / 2);
+        for (let i = 0; i < hexAudio.length; i += 2) bytes[i / 2] = parseInt(hexAudio.substr(i, 2), 16);
+        const mimeMap = { mp3: 'audio/mpeg', wav: 'audio/wav', pcm: 'audio/pcm', flac: 'audio/flac' };
+        return URL.createObjectURL(new Blob([bytes], { type: mimeMap[format] || 'audio/mpeg' }));
+    }
+
+    function playAudio(url, onProgressThreshold) {
+        return new Promise((resolve, reject) => {
+            if (!ttsAudioEl) ttsAudioEl = new Audio();
+            currentAudio = ttsAudioEl;
+            currentAudio.src = url;
+            let fired = false;
+            currentAudio.ontimeupdate = () => {
+                if (!fired && onProgressThreshold && currentAudio.duration > 0) {
+                    let threshold = parseFloat(prefetchThresholdInput.value);
+                    if (isNaN(threshold) || threshold < 1 || threshold > 99) threshold = 60;
+                    if (currentAudio.currentTime / currentAudio.duration >= threshold / 100) { fired = true; onProgressThreshold(); }
+                }
+            };
+            currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio.ontimeupdate = null; resolve(); };
+            currentAudio.onerror = () => { URL.revokeObjectURL(url); currentAudio.ontimeupdate = null; reject(new Error('音频播放失败')); };
+            currentAudio.play().catch(reject);
+        });
+    }
+
+    function togglePause() {
+        if (!isReading) return;
+        isPaused = !isPaused;
+        ttsPauseBtn.textContent = isPaused ? '继续' : '暂停';
+        if (currentAudio) { if (isPaused) currentAudio.pause(); else currentAudio.play().catch(() => {}); }
+        ttsStatus.textContent = isPaused ? '已暂停' : '朗读中...';
+        updateListenBtnUI();
+    }
+
+    function stopReading() {
+        isReading = false; isPaused = false;
+        if (currentAudio) { currentAudio.pause(); currentAudio.ontimeupdate = null; currentAudio = null; }
+        Object.keys(prefetchCache).forEach(key => {
+            prefetchCache[key].then(url => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+            delete prefetchCache[key];
+        });
+        document.querySelectorAll('.sentence.reading').forEach(s => s.classList.remove('reading'));
+        ttsPlayBtn.disabled = false; ttsPauseBtn.disabled = true; ttsStopBtn.disabled = true;
+        ttsStatus.textContent = '';
+        updateListenBtnUI();
+    }
+    function stopReadingKeepState() {
+        isReading = false; isPaused = false;
+        if (currentAudio) { currentAudio.pause(); currentAudio.ontimeupdate = null; currentAudio = null; }
+        Object.keys(prefetchCache).forEach(key => {
+            prefetchCache[key].then(url => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+            delete prefetchCache[key];
+        });
+    }
+
+    function resetAdvancedSettings() {
+        modelSelect.value = 'speech-2.8-hd'; volInput.value = 1; pitchInput.value = 0;
+        emotionSelect.value = ''; languageBoostSelect.value = 'auto';
+        sampleRateSelect.value = '32000'; bitrateSelect.value = '128000';
+        formatSelect.value = 'mp3'; channelSelect.value = '1';
+        prefetchThresholdInput.value = 60; speedRange.value = 1; speedVal.textContent = '1.0';
+        saveSettings();
+    }
+
+    // ================= 本地保存参数配置 =================
+    const SETTINGS_KEY = 'txtReaderSettings_shoelace_v1';
+    const persistFieldIds = [
+        'apiKeyInput', 'voiceSelect', 'customVoiceInput', 'prefetchThresholdInput', 'startFromInput',
+        'modelSelect', 'volInput', 'pitchInput', 'emotionSelect', 'languageBoostSelect',
+        'sampleRateSelect', 'bitrateSelect', 'formatSelect', 'channelSelect',
+        'pageSizeSelect', 'paginationModeSelect',
+    ];
+    function saveSettings() {
+        const obj = {};
+        persistFieldIds.forEach(id => { const el = document.getElementById(id); if (el) obj[id] = el.value; });
+        obj.speed = speedRange.value;
+        obj.fontSize = fontSize;
+        obj.dark = document.body.classList.contains('dark');
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(obj)); } catch (e) { console.warn('保存设置失败:', e); }
+    }
+    function loadSettings() {
+        let obj;
+        try {
+            const raw = localStorage.getItem(SETTINGS_KEY);
+            if (!raw) return;
+            obj = JSON.parse(raw);
+        } catch (e) { return; }
+        persistFieldIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && obj[id] !== undefined) el.value = obj[id];
+        });
+        if (obj.speed !== undefined) { speedRange.value = obj.speed; speedVal.textContent = parseFloat(obj.speed).toFixed(1); }
+        if (obj.fontSize !== undefined) { fontSize = obj.fontSize; content.style.fontSize = fontSize + 'px'; }
+        if (obj.dark) { document.body.classList.add('dark'); document.getElementById('darkToggleBtn').classList.add('active'); }
+        pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10) || 1000;
+        paginationMode = document.getElementById('paginationModeSelect').value || 'chapter';
+        customVoiceInput.style.display = voiceSelect.value === 'custom' ? 'inline-block' : 'none';
+    }
+    function clearSavedSettings() {
+        localStorage.removeItem(SETTINGS_KEY);
+        alert('已清除本地保存的参数配置,刷新页面后恢复默认值');
+    }
+    function bindAutoSave() {
+        persistFieldIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('sl-change', saveSettings);
+        });
+        speedRange.addEventListener('sl-change', saveSettings);
+    }
+
+    // Shoelace 自定义事件(sl-change / sl-input)不能用内联 on* 属性绑定,统一在这里挂监听
+    function bindShoelaceEvents() {
+        document.getElementById('paginationModeSelect').addEventListener('sl-change', e => onPaginationModeChange(e.target.value));
+        document.getElementById('pageSizeSelect').addEventListener('sl-change', e => onPageSizeChange(e.target.value));
+        voiceSelect.addEventListener('sl-change', e => onVoiceChange(e.target.value));
+        pageSlider.addEventListener('sl-input', e => onSliderInput(e.target.value));
+        pageSlider.addEventListener('sl-change', e => onSliderInput(e.target.value));
+        speedRange.addEventListener('sl-input', e => { speedVal.textContent = parseFloat(e.target.value).toFixed(1); });
+    }
+
+    Promise.all([
+        customElements.whenDefined('sl-select'),
+        customElements.whenDefined('sl-range'),
+        customElements.whenDefined('sl-input'),
+    ]).then(() => {
+        loadSettings();
+        bindAutoSave();
+        bindShoelaceEvents();
+    });
+</script>
+</div>
+</body>
+</html>
