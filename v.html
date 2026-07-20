@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>剪映间 · 视频编辑</title>
+<style>
+/* ========== 设计令牌 ========== */
+:root{
+  --bg:#101014; --panel:#1a1a21; --panel2:#22222b; --line:#2e2e3a;
+  --ink:#f2f0ec; --dim:#9b98a6; --acc:#ffc93c; --acc2:#4dd6c1;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"PingFang SC","SF Pro",system-ui,sans-serif;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior:none;
+}
+button{cursor:pointer;font-family:inherit}
+
+/* ========== 布局 ========== */
+.wrap{max-width:760px;margin:0 auto;padding:0 12px 32px}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 4px 8px}
+header h1{font-size:17px;font-weight:700;letter-spacing:.06em}
+header h1 em{color:var(--acc);font-style:normal}
+#status{font-size:12px;color:var(--dim);max-width:55%;text-align:right}
+[hidden]{display:none!important}
+
+/* ========== 上传 ========== */
+#drop{
+  display:block;border:1.5px dashed var(--line);border-radius:var(--r);
+  padding:44px 16px;text-align:center;color:var(--dim);font-size:14px;background:var(--panel);
+}
+#drop strong{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+input[type=file]{display:none}
+
+/* ========== 预览舞台 ========== */
+#stage{position:relative;background:#000;border-radius:var(--r);overflow:hidden;touch-action:none}
+#view{width:100%;display:block}
+video{display:none}
+#playBtn{
+  position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:58px;height:58px;border-radius:50%;font-size:22px;color:#fff;
+  background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.4);
+}
+#stage.cropping #playBtn{display:none}
+#cropBox{
+  position:absolute;z-index:3;border:1.5px solid var(--acc);
+  box-shadow:0 0 0 9999px rgba(0,0,0,.55);touch-action:none;
+}
+#cropBox .h{position:absolute;right:-13px;bottom:-13px;width:26px;height:26px;border-radius:50%;background:var(--acc)}
+
+/* ========== 时间轴 ========== */
+#timeline{margin-top:12px}
+#thumbs{position:relative;height:56px;border-radius:10px;overflow:hidden;background:var(--panel2)}
+#thumbs img{height:56px;float:left}
+#selMask{position:absolute;top:0;bottom:0;z-index:1;pointer-events:none;
+         border-top:2px solid var(--acc);border-bottom:2px solid var(--acc)}
+#cursor{position:absolute;top:0;bottom:0;z-index:2;width:2px;background:#fff;pointer-events:none}
+#selL,#selR{position:absolute;top:0;bottom:0;z-index:3;width:16px;background:var(--acc);touch-action:none}
+#selL{border-radius:8px 0 0 8px}#selR{border-radius:0 8px 8px 0}
+#selL::after,#selR::after{content:"";position:absolute;left:6px;top:18px;bottom:18px;width:3px;border-radius:2px;background:#0005}
+#tlabel{display:flex;justify-content:space-between;margin-top:6px;
+        font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* ========== 工具区 ========== */
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:14px 0 10px;padding-bottom:2px}
+.tabs button{flex:0 0 auto;padding:8px 14px;border-radius:999px;font-size:13px;
+             background:var(--panel);border:1px solid var(--line);color:var(--dim)}
+.tabs button.on{background:var(--acc);border-color:var(--acc);color:#151515;font-weight:600}
+.panel{display:none;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.panel.on{display:block}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}
+.row:last-child{margin-bottom:0}
+.row label{flex:0 0 auto;width:64px;font-size:13px;color:var(--dim)}
+.row label.auto{width:auto}
+.row output{width:44px;text-align:right;font-size:12px;color:var(--acc2);font-variant-numeric:tabular-nums}
+input[type=range]{flex:1;min-width:120px;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+                                        background:var(--ink);border:3px solid var(--acc)}
+.chip{padding:9px 14px;border-radius:10px;font-size:13px;
+      background:var(--panel2);border:1px solid var(--line);color:var(--ink)}
+.chip.on{border-color:var(--acc2);color:var(--acc2)}
+.grid{display:flex;flex-wrap:wrap;gap:8px}
+input[type=text]{width:100%;padding:10px;font-size:14px;border-radius:10px;
+                 background:var(--panel2);border:1px solid var(--line);color:var(--ink)}
+select{padding:9px;font-size:13px;border-radius:10px;
+       background:var(--pan2, var(--panel2));border:1px solid var(--line);color:var(--ink);background:var(--panel2)}
+input[type=color]{width:44px;height:36px;border:none;background:none}
+
+/* ========== 底部动作 ========== */
+#actions{display:flex;gap:10px;margin-top:14px}
+#actions button{flex:1;padding:14px;border-radius:12px;border:none;font-size:15px;font-weight:600}
+#btnShot{background:var(--panel2);color:var(--ink);border:1px solid var(--line)!important}
+#btnExport{background:var(--acc);color:#151515}
+#btnExport:disabled{opacity:.5}
+#prog{height:6px;margin-top:10px;border-radius:3px;background:var(--panel2);overflow:hidden}
+#prog i{display:block;height:100%;width:0;background:var(--acc2)}
+.note{margin-top:10px;font-size:12px;color:var(--dim);line-height:1.6}
+a.dl{display:inline-block;margin-top:6px;padding:10px 18px;border-radius:10px;
+     background:var(--acc2);color:#111;text-decoration:none;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>剪映间<em>·</em>Studio</h1>
+  <div id="status">选择一个视频开始</div>
+</header>
+
+<label id="drop">
+  <strong>点按选择视频</strong>支持 MP4 / MOV · 全程本地处理,不上传
+  <input type="file" id="file" accept="video/*">
+</label>
+
+<div id="stage" hidden>
+  <canvas id="view"></canvas>
+  <div id="cropBox" hidden><div class="h"></div></div>
+  <button id="playBtn">▶</button>
+</div>
+<video id="vid" playsinline webkit-playsinline muted></video>
+
+<div id="timeline" hidden>
+  <div id="thumbs"><div id="selMask"></div><div id="selL"></div><div id="selR"></div><div id="cursor"></div></div>
+  <div id="tlabel"><span id="tIn">0:00.0</span><span id="tDur"></span><span id="tOut">0:00.0</span></div>
+</div>
+
+<div class="tabs" id="tabs" hidden>
+  <button data-p="pAdj" class="on">调色</button>
+  <button data-p="pFx">滤镜</button>
+  <button data-p="pCrop">裁切/旋转</button>
+  <button data-p="pSpeed">速度/音量</button>
+  <button data-p="pText">文字</button>
+</div>
+
+<div class="panel on" id="pAdj">
+  <div class="row"><label>亮度</label><input type="range" data-adj="bri" min="50" max="150" value="100"><output>100</output></div>
+  <div class="row"><label>对比度</label><input type="range" data-adj="con" min="50" max="150" value="100"><output>100</output></div>
+  <div class="row"><label>饱和度</label><input type="range" data-adj="sat" min="0" max="200" value="100"><output>100</output></div>
+  <div class="row"><label>色相</label><input type="range" data-adj="hue" min="0" max="360" value="0"><output>0</output></div>
+  <div class="row"><label>模糊</label><input type="range" data-adj="blur" min="0" max="10" value="0"><output>0</output></div>
+  <div class="row"><label></label><button class="chip" id="resetAdj">重置调色</button></div>
+</div>
+
+<div class="panel" id="pFx"><div class="grid" id="fxGrid"></div></div>
+
+<div class="panel" id="pCrop">
+  <div class="grid" style="margin-bottom:12px">
+    <button class="chip" id="rotBtn">旋转 90°</button>
+    <button class="chip" id="flipH">水平翻转</button>
+    <button class="chip" id="flipV">垂直翻转</button>
+    <button class="chip" id="cropToggle">框选裁切</button>
+    <button class="chip" id="cropClear">取消裁切</button>
+  </div>
+  <div class="note">开启「框选裁切」后,拖动黄框移动位置、拖右下角圆点调整大小,再次点按按钮确认。</div>
+</div>
+
+<div class="panel" id="pSpeed">
+  <div class="row"><label>倍速</label><input type="range" id="speed" min="25" max="300" value="100" step="5"><output>1.0x</output></div>
+  <div class="row"><label>音量</label><input type="range" id="vol" min="0" max="100" value="100"><output>100</output></div>
+  <div class="row"><label></label><button class="chip" id="muteBtn">静音</button></div>
+  <div class="note">导出前先点一次播放以解锁声音;导出过程请保持页面在前台。</div>
+</div>
+
+<div class="panel" id="pText">
+  <div class="row"><input type="text" id="txt" placeholder="输入水印 / 字幕文字"></div>
+  <div class="row"><label>大小</label><input type="range" id="txtSize" min="12" max="120" value="36"><output>36</output></div>
+  <div class="row">
+    <label>位置</label>
+    <select id="txtPos">
+      <option value="bottom">底部居中</option><option value="top">顶部居中</option>
+      <option value="center">正中</option><option value="tl">左上</option><option value="br">右下</option>
+    </select>
+    <label class="auto">颜色</label><input type="color" id="txtColor" value="#ffffff">
+  </div>
+</div>
+
+<div id="actions" hidden>
+  <button id="btnShot">截取当前帧</button>
+  <button id="btnExport">导出视频</button>
+</div>
+<div id="prog" hidden><i></i></div>
+<div class="note" id="outNote"></div>
+
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+ * 结构总览
+ *   State    — 全部可变状态,单一来源
+ *   Dom      — 元素引用
+ *   Util     — 通用小工具
+ *   Renderer — 画布绘制(尺寸、变换、滤镜、文字)
+ *   Player   — 播放循环与区间控制
+ *   Timeline — 缩略图与入/出点拖拽
+ *   Controls — 各面板事件绑定
+ *   CropTool — 框选裁切交互
+ *   Exporter — 截帧与 MediaRecorder 导出(含 iOS 兼容)
+ * ===================================================================== */
+
+/* ---------- State ---------- */
+const State = {
+  dur: 0, tIn: 0, tOut: 0,
+  playing: false,
+  rot: 0, flipH: 1, flipV: 1,
+  crop: null,            // {x,y,w,h} 源像素坐标
+  cropMode: false,
+  adj: { bri:100, con:100, sat:100, hue:0, blur:0 },
+  fx: "",
+  userMuted: false,      // [FIX] 记录用户是否主动静音,播放时不再强制取消静音
+};
+
+/* ---------- Dom ---------- */
+const $ = s => document.querySelector(s);
+const Dom = {
+  vid: $("#vid"), stage: $("#stage"), view: $("#view"),
+  playBtn: $("#playBtn"), cropBox: $("#cropBox"),
+  thumbs: $("#thumbs"), selL: $("#selL"), selR: $("#selR"),
+  selMask: $("#selMask"), cursor: $("#cursor"),
+  status: $("#status"), note: $("#outNote"),
+  prog: $("#prog"), bar: $("#prog i"),
+};
+const ctx = Dom.view.getContext("2d");
+
+/* ---------- Util ---------- */
+const Util = {
+  fmt(t){ const m=~~(t/60), s=(t%60).toFixed(1); return `${m}:${s<10?"0":""}${s}`; },
+  clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
+  // [FIX] 目标时间与当前相同则 seeked 永不触发(导出/建缩略图会卡死);
+  //       直接返回,并加超时兜底,保证 Promise 一定 resolve
+  seekTo:t=>new Promise(r=>{
+    if(Math.abs(Dom.vid.currentTime-t)<0.01) return r();
+    let timer;
+    const f=()=>{ clearTimeout(timer); Dom.vid.removeEventListener("seeked",f); r(); };
+    timer = setTimeout(f, 1500);
+    Dom.vid.addEventListener("seeked",f);
+    Dom.vid.currentTime = t;
+  }),
+  note:html=>{ Dom.note.innerHTML=html; },
+};
+
+/* ---------- Renderer ---------- */
+const Renderer = {
+  outSize(){
+    const w = State.crop ? State.crop.w : Dom.vid.videoWidth;
+    const h = State.crop ? State.crop.h : Dom.vid.videoHeight;
+    return (State.rot % 180) ? [h, w] : [w, h];
+  },
+  resize(){
+    const [w,h] = this.outSize(); if(!w) return;
+    const cw = Dom.stage.clientWidth || 360;
+    Dom.view.width = w; Dom.view.height = h;
+    Dom.view.style.height = (cw * h / w) + "px";
+  },
+  filterString(){
+    const a = State.adj;
+    return `brightness(${a.bri}%) contrast(${a.con}%) saturate(${a.sat}%) `
+         + `hue-rotate(${a.hue}deg) blur(${a.blur}px) ${State.fx}`.trim();
+  },
+  draw(){
+    const v = Dom.vid; if(!v.videoWidth) return;
+    const [w,h] = this.outSize();
+    if(Dom.view.width !== w || Dom.view.height !== h) this.resize();
+    const c = State.crop, sx=c?c.x:0, sy=c?c.y:0,
+          sw=c?c.w:v.videoWidth, sh=c?c.h:v.videoHeight;
+    ctx.save();
+    ctx.filter = this.filterString();
+    ctx.translate(w/2, h/2);
+    ctx.rotate(State.rot * Math.PI/180);
+    ctx.scale(State.flipH, State.flipV);
+    ctx.drawImage(v, sx, sy, sw, sh, -sw/2, -sh/2, sw, sh);
+    ctx.restore();
+    this.drawText(w, h);
+    Timeline.drawCursor();
+  },
+  drawText(w, h){
+    const t = $("#txt").value; if(!t) return;
+    const size = +$("#txtSize").value;
+    ctx.save();
+    ctx.filter = "none";
+    ctx.font = `600 ${size}px -apple-system,'PingFang SC',sans-serif`;
+    ctx.fillStyle = $("#txtColor").value;
+    ctx.strokeStyle = "rgba(0,0,0,.55)";
+    ctx.lineWidth = size/12;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    let x = w/2, y = h - size;
+    switch($("#txtPos").value){
+      case "top":    y = size; break;
+      case "center": y = h/2; break;
+      case "tl": ctx.textAlign="left";  x = size/2;     y = size;     break;
+      case "br": ctx.textAlign="right"; x = w - size/2; y = h - size; break;
+    }
+    ctx.strokeText(t,x,y); ctx.fillText(t,x,y);
+    ctx.restore();
+  },
+};
+
+/* ---------- Player ---------- */
+const Player = {
+  init(){
+    Dom.playBtn.addEventListener("click", ()=>this.toggle());
+    Dom.vid.addEventListener("play",  ()=>{ State.playing=true;  Dom.playBtn.style.display="none"; this.loop(); });
+    Dom.vid.addEventListener("pause", ()=>{ State.playing=false; Dom.playBtn.style.display="block"; });
+    Dom.vid.addEventListener("seeked", ()=>Renderer.draw());
+  },
+  async toggle(){
+    const v = Dom.vid;
+    if(State.playing){ v.pause(); return; }
+    // [FIX] 尊重用户的静音开关,不再无条件取消静音
+    v.muted = State.userMuted;
+    if(v.currentTime < State.tIn || v.currentTime >= State.tOut) v.currentTime = State.tIn;
+    try{ await v.play(); }catch(e){ v.muted = true; v.play(); }
+  },
+  loop(){
+    if(!State.playing) return;
+    if(Dom.vid.currentTime >= State.tOut){
+      Dom.vid.pause(); Dom.vid.currentTime = State.tIn; return;
+    }
+    Renderer.draw();
+    requestAnimationFrame(()=>this.loop());
+  },
+};
+
+/* ---------- Timeline ---------- */
+const Timeline = {
+  init(){
+    this.bindHandle(Dom.selL, true);
+    this.bindHandle(Dom.selR, false);
+    Dom.thumbs.addEventListener("click", e=>{
+      if(e.target===Dom.selL || e.target===Dom.selR) return;
+      const r = Dom.thumbs.getBoundingClientRect();
+      Dom.vid.currentTime = Util.clamp((e.clientX-r.left)/r.width*State.dur, State.tIn, State.tOut);
+    });
+  },
+  async build(){
+    Dom.thumbs.querySelectorAll("img").forEach(i=>i.remove());
+    const v = Dom.vid;
+    const n = Util.clamp(~~(Dom.thumbs.clientWidth/60), 5, 10);
+    const th = 56, tw = ~~(th * v.videoWidth / v.videoHeight);
+    const c = document.createElement("canvas");
+    c.width=tw; c.height=th;
+    const cc = c.getContext("2d");
+    const old = v.currentTime;
+    for(let i=0;i<n;i++){
+      await Util.seekTo(State.dur*(i+.5)/n);
+      cc.drawImage(v,0,0,tw,th);
+      const img = new Image();
+      img.src = c.toDataURL("image/jpeg",.5);
+      img.style.width = (Dom.thumbs.clientWidth/n)+"px";
+      Dom.thumbs.insertBefore(img, Dom.selMask);
+    }
+    v.currentTime = old;
+  },
+  update(){
+    const W = Dom.thumbs.clientWidth;
+    const l = State.tIn/State.dur*W, r = State.tOut/State.dur*W;
+    Dom.selL.style.left = Math.max(0, l-16)+"px";
+    Dom.selR.style.left = Math.min(W-16, r)+"px";
+    Dom.selMask.style.left = l+"px";
+    Dom.selMask.style.width = (r-l)+"px";
+    $("#tIn").textContent = Util.fmt(State.tIn);
+    $("#tOut").textContent = Util.fmt(State.tOut);
+  },
+  drawCursor(){
+    Dom.cursor.style.left = (Dom.vid.currentTime/State.dur*Dom.thumbs.clientWidth)+"px";
+  },
+  bindHandle(el, isLeft){
+    el.addEventListener("touchstart", e=>e.preventDefault(), {passive:false});
+    el.addEventListener("pointerdown", e=>{
+      e.preventDefault(); el.setPointerCapture(e.pointerId);
+      const move = ev=>{
+        const rect = Dom.thumbs.getBoundingClientRect();
+        const t = Util.clamp((ev.clientX-rect.left)/rect.width*State.dur, 0, State.dur);
+        if(isLeft) State.tIn  = Math.min(t, State.tOut-.2);
+        else       State.tOut = Math.max(t, State.tIn +.2);
+        Dom.vid.currentTime = isLeft ? State.tIn : State.tOut;
+        this.update();
+      };
+      const up = ()=>{
+        el.removeEventListener("pointermove",move);
+        el.removeEventListener("pointerup",up);
+        el.removeEventListener("pointercancel",up); // [FIX] 系统打断(来电/通知)时也要收尾
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);     // [FIX]
+    });
+  },
+};
+
+/* ---------- Controls ---------- */
+const Controls = {
+  FX: [
+    ["原片",""], ["黑白","grayscale(1)"], ["复古","sepia(.7) saturate(1.2)"],
+    ["胶片","contrast(1.15) saturate(1.3) sepia(.15)"], ["冷调","hue-rotate(180deg) saturate(.85)"],
+    ["暖阳","sepia(.3) saturate(1.4) brightness(1.05)"], ["反色","invert(1)"],
+    ["梦幻","blur(1px) brightness(1.1) saturate(1.3)"],
+  ],
+  init(){
+    // Tabs
+    $("#tabs").addEventListener("click", e=>{
+      const b = e.target.closest("button"); if(!b) return;
+      document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x===b));
+      document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("on", p.id===b.dataset.p));
+    });
+    // 调色滑杆(data-adj 驱动)
+    document.querySelectorAll("[data-adj]").forEach(el=>{
+      el.addEventListener("input", ()=>{
+        State.adj[el.dataset.adj] = +el.value;
+        el.nextElementSibling.value = el.value;
+        Renderer.draw();
+      });
+    });
+    $("#resetAdj").addEventListener("click", ()=>{
+      Object.assign(State.adj, {bri:100,con:100,sat:100,hue:0,blur:0});
+      document.querySelectorAll("[data-adj]").forEach(el=>{
+        el.value = State.adj[el.dataset.adj];
+        el.nextElementSibling.value = el.value;
+      });
+      Renderer.draw();
+    });
+    // 滤镜
+    this.FX.forEach(([name,f],i)=>{
+      const b = document.createElement("button");
+      b.className = "chip"+(i===0?" on":""); b.textContent = name;
+      b.addEventListener("click", ()=>{
+        State.fx = f;
+        $("#fxGrid").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"));
+        b.classList.add("on");
+        Renderer.draw();
+      });
+      $("#fxGrid").appendChild(b);
+    });
+    // 旋转/翻转
+    $("#rotBtn").addEventListener("click", ()=>{ State.rot=(State.rot+90)%360; Renderer.resize(); Renderer.draw(); });
+    $("#flipH").addEventListener("click", e=>{ State.flipH*=-1; e.target.classList.toggle("on"); Renderer.draw(); });
+    $("#flipV").addEventListener("click", e=>{ State.flipV*=-1; e.target.classList.toggle("on"); Renderer.draw(); });
+    // 速度/音量
+    $("#speed").addEventListener("input", e=>{
+      Dom.vid.playbackRate = e.target.value/100;
+      e.target.nextElementSibling.value = (e.target.value/100).toFixed(2)+"x";
+    });
+    $("#vol").addEventListener("input", e=>{
+      Dom.vid.volume = e.target.value/100;
+      e.target.nextElementSibling.value = e.target.value;
+      if(Audio.gain) Audio.gain.gain.value = Dom.vid.volume;
+    });
+    $("#muteBtn").addEventListener("click", e=>{
+      // [FIX] 静音状态记入 State.userMuted,播放时才不会被覆盖
+      State.userMuted = !State.userMuted;
+      Dom.vid.muted = State.userMuted;
+      e.target.classList.toggle("on", State.userMuted);
+    });
+    // 文字实时预览
+    ["txt","txtSize","txtPos","txtColor"].forEach(id=>{
+      $("#"+id).addEventListener("input", ()=>{
+        const o = $("#txtSize").nextElementSibling;
+        if(o) o.value = $("#txtSize").value;
+        Renderer.draw();
+      });
+    });
+  },
+};
+
+/* ---------- CropTool ---------- */
+const CropTool = {
+  init(){
+    $("#cropToggle").addEventListener("click", e=>this.toggle(e.target));
+    $("#cropClear").addEventListener("click", ()=>this.clear());
+    this.bindDrag();
+  },
+  toggle(btn){
+    State.cropMode = !State.cropMode;
+    btn.classList.toggle("on", State.cropMode);
+    Dom.stage.classList.toggle("cropping", State.cropMode);
+    if(State.cropMode){
+      if(State.playing) Dom.vid.pause();
+      State.crop = null;
+      Renderer.resize(); Renderer.draw();
+      const W = Dom.stage.clientWidth, H = Dom.view.getBoundingClientRect().height;
+      Object.assign(Dom.cropBox.style, {
+        left:W*.15+"px", top:H*.15+"px", width:W*.7+"px", height:H*.7+"px",
+      });
+      Dom.cropBox.hidden = false;
+    }else{
+      this.apply();
+    }
+  },
+  apply(){
+    // [FIX] 原实现直接用 videoWidth/显示宽度 换算,旋转或翻转后坐标系不一致,
+    //       导致框选位置与实际裁切区域错位。现在先换算到「输出画面」像素坐标,
+    //       再做逆旋转 + 逆翻转,映射回源视频像素坐标。
+    const v = Dom.vid;
+    const sr = Dom.view.getBoundingClientRect();
+    const br = Dom.cropBox.getBoundingClientRect();
+    const [ow, oh] = Renderer.outSize();          // 此时 crop 为 null,即旋转后的整幅尺寸
+    const kx = ow/sr.width, ky = oh/sr.height;
+    const X = (br.left-sr.left)*kx, Y = (br.top-sr.top)*ky;
+    const W = br.width*kx, H = br.height*ky;
+    const rad = State.rot*Math.PI/180;
+    const cos = Math.round(Math.cos(rad)), sin = Math.round(Math.sin(rad));
+    const map = (px,py)=>{
+      let u = px-ow/2, w = py-oh/2;
+      let u2 =  cos*u + sin*w;                    // 逆旋转
+      let v2 = -sin*u + cos*w;
+      u2 /= State.flipH; v2 /= State.flipV;       // 逆翻转
+      return [u2+v.videoWidth/2, v2+v.videoHeight/2];
+    };
+    const pts = [map(X,Y), map(X+W,Y), map(X,Y+H), map(X+W,Y+H)];
+    const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+    const c = {
+      x: Math.max(0, Math.min(...xs)),
+      y: Math.max(0, Math.min(...ys)),
+      w: Math.max(...xs)-Math.min(...xs),
+      h: Math.max(...ys)-Math.min(...ys),
+    };
+    c.w = Math.min(c.w, v.videoWidth -c.x);
+    c.h = Math.min(c.h, v.videoHeight-c.y);
+    State.crop = c;
+    Dom.cropBox.hidden = true;
+    Dom.stage.classList.remove("cropping");
+    Renderer.resize(); Renderer.draw();
+  },
+  clear(){
+    State.crop = null; State.cropMode = false;
+    Dom.cropBox.hidden = true;
+    Dom.stage.classList.remove("cropping");
+    $("#cropToggle").classList.remove("on");
+    Renderer.resize(); Renderer.draw();
+  },
+  bindDrag(){
+    const box = Dom.cropBox, handle = box.querySelector(".h");
+    let mode=null, sx,sy, ox,oy,ow,oh;
+    box.addEventListener("pointerdown", e=>{
+      e.preventDefault(); box.setPointerCapture(e.pointerId);
+      mode = (e.target===handle) ? "size" : "move";
+      sx=e.clientX; sy=e.clientY;
+      ox=box.offsetLeft; oy=box.offsetTop; ow=box.offsetWidth; oh=box.offsetHeight;
+    });
+    box.addEventListener("pointermove", e=>{
+      if(!mode) return;
+      const dx=e.clientX-sx, dy=e.clientY-sy;
+      const W=Dom.stage.clientWidth, H=Dom.view.getBoundingClientRect().height;
+      if(mode==="move"){
+        box.style.left = Util.clamp(ox+dx, 0, W-box.offsetWidth )+"px";
+        box.style.top  = Util.clamp(oy+dy, 0, H-box.offsetHeight)+"px";
+      }else{
+        box.style.width  = Util.clamp(ow+dx, 40, W-box.offsetLeft)+"px";
+        box.style.height = Util.clamp(oh+dy, 40, H-box.offsetTop )+"px";
+      }
+    });
+    box.addEventListener("pointerup", ()=>mode=null);
+    box.addEventListener("pointercancel", ()=>mode=null); // [FIX] 打断后状态复位
+  },
+};
+
+/* ---------- Audio(导出混音,MediaElementSource 只能建一次)---------- */
+const Audio = {
+  ctx:null, src:null, gain:null, dest:null,
+  async ensure(){
+    if(Dom.vid.muted || Dom.vid.volume===0) return null;
+    if(!this.ctx){
+      this.ctx = new (window.AudioContext||window.webkitAudioContext)();
+      this.src = this.ctx.createMediaElementSource(Dom.vid);
+      this.gain = this.ctx.createGain();
+      this.dest = this.ctx.createMediaStreamDestination();
+      this.src.connect(this.gain);
+      this.gain.connect(this.dest);
+      this.gain.connect(this.ctx.destination);
+    }
+    await this.ctx.resume();
+    this.gain.gain.value = Dom.vid.volume;
+    return this.dest.stream.getAudioTracks();
+  },
+};
+
+/* ---------- Exporter ---------- */
+const Exporter = {
+  lastUrl: null, // [FIX] 记录上次导出的 blob URL,避免反复导出泄漏内存
+  init(){
+    $("#btnShot").addEventListener("click", ()=>this.snapshot());
+    $("#btnExport").addEventListener("click", ()=>this.export());
+  },
+  snapshot(){
+    Renderer.draw();
+    Dom.view.toBlob(b=>{
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = "frame-"+Date.now()+".png";
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 60000);
+      Util.note("已保存当前帧为 PNG。iOS 会打开分享/下载面板。");
+    }, "image/png");
+  },
+  pickMime(){
+    const list = ["video/mp4;codecs=avc1","video/mp4","video/webm;codecs=vp9","video/webm"];
+    return list.find(m=>MediaRecorder.isTypeSupported(m)) || null;
+  },
+  makeRecorder(stream, mime){
+    const tries = [];
+    if(mime) tries.push({mimeType:mime, videoBitsPerSecond:6e6}, {mimeType:mime});
+    tries.push({videoBitsPerSecond:6e6}, {});
+    for(const opt of tries){ try{ return new MediaRecorder(stream, opt); }catch(e){} }
+    return null;
+  },
+  setBusy(on){
+    const btn = $("#btnExport");
+    btn.disabled = on;
+    btn.textContent = on ? "导出中…" : "导出视频";
+    Dom.prog.hidden = !on;
+    if(!on) Dom.bar.style.width = "0";
+  },
+  async export(){
+    if(!("MediaRecorder" in window))
+      return Util.note("此浏览器不支持视频录制导出(iOS 需 14.5+ 的 Safari)。你仍可使用截帧功能。");
+    if(!Dom.view.captureStream)
+      return Util.note("此浏览器不支持画布录制,请更新 iOS/Safari 后重试。");
+
+    this.setBusy(true);
+    const v = Dom.vid;
+    v.pause();
+
+    const stream = Dom.view.captureStream(30);
+    try{
+      const tracks = await Audio.ensure();
+      if(tracks) tracks.forEach(t=>stream.addTrack(t));
+    }catch(e){ /* 音频失败则导出无声 */ }
+
+    const rec = this.makeRecorder(stream, this.pickMime());
+    if(!rec){ this.setBusy(false); return Util.note("无法创建录制器,此设备暂不支持导出。"); }
+
+    const chunks = [];
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    rec.onerror = e=>console.warn("recorder error", e);
+    const stopped = new Promise(r=>rec.onstop=r);
+    const isMp4 = (rec.mimeType||"").includes("mp4") || !rec.mimeType;
+
+    await Util.seekTo(State.tIn);
+    v.playbackRate = $("#speed").value/100;
+    Renderer.draw(); // [FIX] 先画一帧,确保 captureStream 里已有画面
+    const vt = stream.getVideoTracks()[0];
+    if(vt && vt.requestFrame) vt.requestFrame();
+
+    // [FIX] iOS 的 MP4 录制不能带 timeslice;webm 则用 timeslice 更稳,不怕中途出错丢全部数据
+    isMp4 ? rec.start() : rec.start(1000);
+
+    // [FIX] 播放两次都失败时立刻中止,不再无限卡在「导出中…」
+    let ok = true;
+    try{ await v.play(); }
+    catch(e){ v.muted=true; try{ await v.play(); }catch(e2){ ok=false; } }
+    if(!ok){
+      try{ rec.stop(); }catch(e){}
+      this.setBusy(false);
+      v.muted = State.userMuted;
+      return Util.note("导出失败:浏览器阻止了自动播放。请先手动点一次 ▶ 播放,再点导出。");
+    }
+
+    // [FIX] 看门狗:视频 3 秒不前进(切后台、解码卡死)则中止并提示
+    let stalled = false;
+    await new Promise(res=>{
+      let lastT = v.currentTime, lastMove = performance.now();
+      const tick = ()=>{
+        Renderer.draw();
+        Dom.bar.style.width = Math.min(100,(v.currentTime-State.tIn)/(State.tOut-State.tIn)*100)+"%";
+        const now = performance.now();
+        if(v.currentTime !== lastT){ lastT = v.currentTime; lastMove = now; }
+        else if(now-lastMove > 3000){ stalled = true; return res(); }
+        (v.currentTime>=State.tOut || v.ended) ? res() : requestAnimationFrame(tick);
+      };
+      tick();
+    });
+
+    v.pause();
+    v.muted = State.userMuted; // [FIX] 导出中的兜底静音不应残留到预览
+    if(!isMp4){ try{ rec.requestData(); }catch(e){} } // [FIX] iOS mp4 录制调用 requestData 可能损坏文件
+    rec.stop();
+    await stopped;
+
+    if(stalled && !chunks.length){
+      this.setBusy(false);
+      return Util.note("导出中断:视频播放停滞(请保持页面在前台、屏幕常亮后重试)。");
+    }
+
+    const type = (rec.mimeType || "video/mp4").split(";")[0];
+    const ext  = type.includes("mp4") ? "mp4" : "webm";
+    const blob = new Blob(chunks, {type});
+    this.setBusy(false);
+    if(!blob.size)
+      return Util.note("导出失败:未录到数据。请先点播放确认视频能正常播放后重试。");
+
+    // iOS 会拦截非手势的程序化下载,因此提供需要用户亲自点按的保存按钮
+    if(this.lastUrl) URL.revokeObjectURL(this.lastUrl); // [FIX]
+    const url = this.lastUrl = URL.createObjectURL(blob);
+    Util.note(
+      `导出完成(${ext.toUpperCase()},${(blob.size/1048576).toFixed(1)} MB)。`+
+      `<br><a class="dl" href="${url}" download="export-${Date.now()}.${ext}">点此保存视频</a>`+
+      `<br>iOS:点按后在分享面板选「存储到文件」,或长按链接选「下载链接的文件」,再从文件 App 存入相册。`
+    );
+  },
+};
+
+/* ---------- App ---------- */
+const App = {
+  init(){
+    Player.init(); Timeline.init(); Controls.init(); CropTool.init(); Exporter.init();
+    $("#file").addEventListener("change", e=>{
+      const f = e.target.files[0]; if(!f) return;
+      Dom.vid.src = URL.createObjectURL(f);
+      Dom.vid.load();
+      Dom.status.textContent = "解析中…";
+    });
+    Dom.vid.addEventListener("loadedmetadata", ()=>this.onLoaded());
+    window.addEventListener("resize", ()=>{
+      Renderer.resize(); Renderer.draw(); Timeline.update();
+    });
+  },
+  async onLoaded(){
+    const v = Dom.vid;
+    State.dur = v.duration; State.tIn = 0; State.tOut = v.duration;
+    $("#drop").hidden = true;
+    ["#stage","#timeline","#tabs","#actions"].forEach(s=>$(s).hidden=false);
+    $("#tabs").style.display = "flex";
+    $("#tDur").textContent = "全长 "+Util.fmt(State.dur);
+    Dom.status.textContent = `${v.videoWidth}×${v.videoHeight} · ${Util.fmt(State.dur)}`;
+    Renderer.resize();
+    Timeline.update();
+    await Timeline.build();
+    v.currentTime = 0.01;
+  },
+};
+App.init();
+</script>
+</body>
+</html>
