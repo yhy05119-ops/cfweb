@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>剪影 · 网页视频编辑器</title>
+<style>
+:root{
+  --bg:#141519;--panel:#1d1f26;--panel2:#23262f;--line:#31343f;
+  --ink:#e8eaf0;--dim:#8b90a0;--accent:#ffb454;--accent2:#5ec8f2;
+  --danger:#ff6b6b;
+  font-size:15px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:"Avenir Next","PingFang SC","Microsoft YaHei",system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:.7rem;padding:.7rem 1.1rem;border-bottom:1px solid var(--line)}
+header .logo{width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:800;color:#141519;font-size:.85rem}
+header h1{font-size:1rem;font-weight:600;letter-spacing:.05em}
+header .hint{margin-left:auto;color:var(--dim);font-size:.78rem}
+main{flex:1;display:grid;grid-template-columns:1fr 280px;gap:1rem;padding:1rem;max-width:1200px;width:100%;margin:0 auto}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+
+/* 预览区 */
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:.9rem}
+.viewport{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center}
+video{max-width:100%;max-height:100%;display:block}
+.drop{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--dim);cursor:pointer;border:2px dashed var(--line);border-radius:8px;transition:.2s}
+.drop.hidden{display:none}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--accent)}
+.drop b{color:var(--ink);font-size:1.05rem;display:block;margin-bottom:.35rem}
+input[type=file]{display:none}
+
+/* 传输控制 */
+.transport{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:.45rem .8rem;font-size:.85rem;cursor:pointer;transition:.15s}
+button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#141519;font-weight:700}
+button.primary:hover:not(:disabled){filter:brightness(1.1);color:#141519}
+button:focus-visible{outline:2px solid var(--accent2);outline-offset:2px}
+.time{font-variant-numeric:tabular-nums;color:var(--dim);font-size:.85rem;margin-left:auto}
+.time b{color:var(--ink)}
+
+/* 时间轴 */
+.timeline{background:var(--panel2);border-radius:8px;padding:.9rem .9rem 1.1rem}
+.tl-label{font-size:.72rem;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;margin-bottom:.6rem;display:flex;justify-content:space-between}
+.track{position:relative;height:46px;background:#0e0f13;border-radius:6px;user-select:none;touch-action:none}
+.sel{position:absolute;top:0;bottom:0;background:linear-gradient(180deg,rgba(255,180,84,.28),rgba(255,180,84,.15));border:1px solid var(--accent);border-radius:4px}
+.handle{position:absolute;top:-4px;bottom:-4px;width:12px;background:var(--accent);border-radius:4px;cursor:ew-resize}
+.handle.l{left:-6px}.handle.r{right:-6px}
+.handle::after{content:"";position:absolute;inset:8px 4px;border-left:2px solid #141519;border-right:2px solid #141519}
+.playhead{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--accent2);pointer-events:none}
+.playhead::before{content:"";position:absolute;top:-4px;left:-4px;border:5px solid transparent;border-top-color:var(--accent2)}
+
+/* 右侧面板 */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1rem;display:flex;flex-direction:column;gap:1.1rem;align-self:start}
+.panel h2{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ctrl{display:flex;flex-direction:column;gap:.3rem}
+.ctrl label{display:flex;justify-content:space-between;font-size:.82rem;color:var(--ink)}
+.ctrl label span{color:var(--dim);font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;height:4px;background:var(--line);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+input[type=range]:focus-visible{outline:2px solid var(--accent2);outline-offset:4px}
+.row{display:flex;gap:.5rem;flex-wrap:wrap}
+.chip{padding:.35rem .6rem;font-size:.78rem;border-radius:99px}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#141519;font-weight:600}
+.export-status{font-size:.78rem;color:var(--accent2);min-height:1.1em}
+.divider{height:1px;background:var(--line)}
+footer{padding:.6rem;text-align:center;color:var(--dim);font-size:.72rem}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">剪</div>
+  <h1>剪影 · 视频编辑器</h1>
+  <span class="hint">纯浏览器运行 · 视频不会上传</span>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="viewport">
+      <video id="video" playsinline webkit-playsinline></video>
+      <div class="drop" id="drop">
+        <div><b>拖入视频文件，或点击选择</b>支持 MP4 / WebM / MOV 等浏览器可播放格式</div>
+      </div>
+      <input type="file" id="file" accept="video/*">
+    </div>
+    <div id="debug" style="font-size:.72rem;color:var(--dim);font-variant-numeric:tabular-nums;min-height:1em"></div>
+
+    <div class="transport">
+      <button id="playBtn" disabled>▶ 播放</button>
+      <button id="stopBtn" disabled>⏹ 回到起点</button>
+      <button id="inBtn" disabled>⟦ 设入点</button>
+      <button id="outBtn" disabled>设出点 ⟧</button>
+      <button id="shotBtn" disabled>📷 截图</button>
+      <span class="time"><b id="cur">00:00.0</b> / <span id="dur">00:00.0</span></span>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-label"><span>时间轴 · 拖动两端手柄裁剪</span><span id="selInfo">未加载</span></div>
+      <div class="track" id="track">
+        <div class="sel" id="sel" style="left:0;right:0">
+          <div class="handle l" id="hL" role="slider" aria-label="入点" tabindex="0"></div>
+          <div class="handle r" id="hR" role="slider" aria-label="出点" tabindex="0"></div>
+        </div>
+        <div class="playhead" id="ph" style="left:0"></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h2>画面调整</h2>
+    <div class="ctrl"><label>亮度 <span id="vB">100%</span></label><input type="range" id="bri" min="20" max="200" value="100"></div>
+    <div class="ctrl"><label>对比度 <span id="vC">100%</span></label><input type="range" id="con" min="20" max="200" value="100"></div>
+    <div class="ctrl"><label>饱和度 <span id="vS">100%</span></label><input type="range" id="sat" min="0" max="250" value="100"></div>
+    <div class="ctrl"><label>色相 <span id="vH">0°</span></label><input type="range" id="hue" min="0" max="360" value="0"></div>
+
+    <h2>滤镜预设</h2>
+    <div class="row">
+      <button class="chip on" data-f="none">原片</button>
+      <button class="chip" data-f="gray">黑白</button>
+      <button class="chip" data-f="sepia">复古</button>
+      <button class="chip" data-f="cool">冷调</button>
+      <button class="chip" data-f="warm">暖调</button>
+    </div>
+
+    <h2>播放速度</h2>
+    <div class="ctrl"><label>速度 <span id="vR">1.0×</span></label><input type="range" id="rate" min="25" max="300" value="100" step="25"></div>
+
+    <div class="divider"></div>
+    <button class="primary" id="exportBtn" disabled>⬇ 导出裁剪片段 (MP4)</button>
+    <div class="export-status" id="status"></div>
+  </aside>
+</main>
+<footer>所有处理均在本地完成 · 导出使用 MediaRecorder，画面滤镜会一并写入</footer>
+
+<script>
+const $=id=>document.getElementById(id);
+const video=$('video'),drop=$('drop'),file=$('file'),track=$('track'),sel=$('sel'),ph=$('ph');
+let dur=0,inT=0,outT=0,preset='none';
+
+// 载入
+drop.onclick=()=>file.click();
+['dragover','dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.toggle('over',e==='dragover');}));
+drop.addEventListener('drop',ev=>{const f=ev.dataTransfer.files[0];if(f)load(f);});
+file.onchange=()=>file.files[0]&&load(file.files[0]);
+// —— ffmpeg.wasm 转码(单线程核心,无需跨域隔离,iOS Safari 可用)——
+let ffmpeg=null,fetchFileFn=null,lastFile=null;
+async function ensureFFmpeg(){
+  if(ffmpeg)return ffmpeg;
+  dbg('正在加载转码引擎(约 32MB,首次较慢)…');
+  const [{FFmpeg},{toBlobURL,fetchFile}]=await Promise.all([
+    import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js'),
+    import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js')
+  ]);
+  fetchFileFn=fetchFile;
+  const base='https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  const ff=new FFmpeg();
+  ff.on('progress',({progress})=>{
+    if(progress>0&&progress<=1)dbg('转码中… '+Math.round(progress*100)+'%(手机上较慢,请勿锁屏)');
+  });
+  await ff.load({
+    coreURL:await toBlobURL(`${base}/ffmpeg-core.js`,'text/javascript'),
+    wasmURL:await toBlobURL(`${base}/ffmpeg-core.wasm`,'application/wasm')
+  });
+  ffmpeg=ff;return ff;
+}
+async function transcode(f){
+  try{
+    const ff=await ensureFFmpeg();
+    dbg('读取文件…');
+    const m=f.name.match(/\.\w+$/);
+    const inName='in'+(m?m[0]:'.dat');
+    await ff.writeFile(inName,await fetchFileFn(f));
+    dbg('开始转码为 H.264 MP4…');
+    await ff.exec(['-i',inName,'-c:v','libx264','-preset','ultrafast','-crf','26',
+      '-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2','-pix_fmt','yuv420p',
+      '-c:a','aac','-b:a','128k','-movflags','+faststart','out.mp4']);
+    const data=await ff.readFile('out.mp4');
+    ff.deleteFile(inName).catch(()=>{});ff.deleteFile('out.mp4').catch(()=>{});
+    const blob=new Blob([data.buffer],{type:'video/mp4'});
+    dbg('转码完成 ✓ 正在载入…');
+    attach(URL.createObjectURL(blob),null); // 已是标准格式,失败不再递归转码
+  }catch(err){
+    drop.classList.remove('hidden');
+    dbg('✗ 转码失败: '+(err&&err.message||err)+'(需联网加载引擎;文件过大可能内存不足,建议 <300MB)');
+  }
+}
+function offerTranscode(f,reason){
+  lastFile=f;
+  dbg('✗ '+reason);
+  let b=document.getElementById('transBtn');
+  if(!b){
+    b=document.createElement('button');
+    b.id='transBtn';b.className='primary';
+    b.style.marginTop='.5rem';
+    b.onclick=()=>{b.remove();transcode(lastFile);};
+    $('debug').after(b);
+  }
+  b.textContent='⚙ 用 ffmpeg 转码为 MP4 并载入('+(f.size/1048576).toFixed(0)+'MB)';
+}
+
+function dbg(msg){$('debug').textContent=msg;}
+function load(f){
+  dbg(`已选择: ${f.name} · ${(f.size/1048576).toFixed(1)}MB · ${f.type||'未知类型'}`);
+  if(f.type&&video.canPlayType(f.type)===''){
+    dbg(`⚠ 浏览器报告无法播放 ${f.type},仍尝试加载…`);
+  }
+  attach(URL.createObjectURL(f),f);
+}
+function attach(url,f){
+  video.removeAttribute('srcObject');
+  video.src=url;
+  video.preload='auto';
+  video.load();
+  let inited=false,triedDataUrl=false;
+  const init=()=>{
+    if(inited)return;
+    if(!isFinite(video.duration)||video.duration<=0){
+      dbg(`加载中… readyState=${video.readyState} duration=${video.duration}`);return;
+    }
+    inited=true;
+    dur=video.duration;inT=0;outT=dur;
+    drop.classList.add('hidden');
+    ['playBtn','stopBtn','inBtn','outBtn','shotBtn','exportBtn'].forEach(i=>$(i).disabled=false);
+    $('dur').textContent=fmt(dur);updateSel();
+    dbg(`就绪 ✓ ${video.videoWidth}×${video.videoHeight} · ${fmt(dur)}`);
+    // 强制渲染首帧:iOS 需要一次静音播放
+    video.muted=true;
+    const p=video.play();
+    if(p&&p.then)p.then(()=>setTimeout(()=>{video.pause();video.currentTime=0;video.muted=false;},80))
+      .catch(err=>{dbg('首帧渲染受限(需点播放): '+err.name);video.muted=false;});
+  };
+  ['loadedmetadata','durationchange','loadeddata','canplay'].forEach(e=>video.addEventListener(e,init));
+  video.onerror=()=>{
+    const codes={1:'加载中止',2:'网络错误',3:'解码失败(编码不支持)',4:'格式不支持'};
+    const code=video.error?video.error.code:0;
+    // blob 兼容问题先用 DataURL 重试一次;仍失败则提供 ffmpeg 转码
+    if(f&&!triedDataUrl&&f.size<200*1048576&&code!==3&&code!==4){
+      triedDataUrl=true;
+      dbg('blob 加载失败,改用 DataURL 重试…');
+      const r=new FileReader();
+      r.onload=()=>{video.onerror=()=>{
+        drop.classList.remove('hidden');
+        if(f)offerTranscode(f,codes[code]||'加载失败');
+      };video.src=r.result;video.load();};
+      r.readAsDataURL(f);
+      return;
+    }
+    drop.classList.remove('hidden');
+    if(f)offerTranscode(f,(codes[code]||'未知错误 '+code)+',此编码 iOS 不支持');
+    else dbg('✗ 转码后仍无法播放: '+(codes[code]||code));
+  };
+  // 8 秒还没就绪给出提示
+  setTimeout(()=>{if(!inited&&!video.error){
+    if(f)offerTranscode(f,`长时间未就绪(readyState=${video.readyState}),可能是 HEVC/杜比视界等编码`);
+    else dbg('仍在加载…');
+  }},8000);
+}
+const fmt=t=>{const m=Math.floor(t/60),s=(t%60).toFixed(1).padStart(4,'0');return String(m).padStart(2,'0')+':'+s};
+
+// 播放控制
+$('playBtn').onclick=()=>{
+  if(video.paused){if(video.currentTime<inT||video.currentTime>=outT)video.currentTime=inT;video.play();}
+  else video.pause();
+};
+video.onplay=()=>$('playBtn').textContent='⏸ 暂停';
+video.onpause=()=>$('playBtn').textContent='▶ 播放';
+$('stopBtn').onclick=()=>{video.pause();video.currentTime=inT;};
+video.ontimeupdate=()=>{
+  if(video.currentTime>=outT&&!video.paused){video.pause();video.currentTime=outT;}
+  $('cur').textContent=fmt(video.currentTime);
+  ph.style.left=(video.currentTime/dur*100)+'%';
+};
+
+// 时间轴
+function updateSel(){
+  sel.style.left=(inT/dur*100)+'%';
+  sel.style.right=(100-outT/dur*100)+'%';
+  $('selInfo').textContent=`${fmt(inT)} → ${fmt(outT)}（共 ${fmt(outT-inT)}）`;
+}
+$('inBtn').onclick=()=>{inT=Math.min(video.currentTime,outT-0.1);updateSel();};
+$('outBtn').onclick=()=>{outT=Math.max(video.currentTime,inT+0.1);updateSel();};
+let drag=null;
+function posToT(x){const r=track.getBoundingClientRect();return Math.max(0,Math.min(dur,(x-r.left)/r.width*dur));}
+$('hL').onpointerdown=e=>{drag='l';e.target.setPointerCapture(e.pointerId);};
+$('hR').onpointerdown=e=>{drag='r';e.target.setPointerCapture(e.pointerId);};
+track.onpointerdown=e=>{if(!drag&&dur){video.currentTime=posToT(e.clientX);}};
+window.addEventListener('pointermove',e=>{
+  if(!drag)return;const t=posToT(e.clientX);
+  if(drag==='l')inT=Math.min(t,outT-0.1);else outT=Math.max(t,inT+0.1);
+  updateSel();
+});
+window.addEventListener('pointerup',()=>drag=null);
+// 键盘微调手柄
+[['hL',v=>inT=Math.max(0,Math.min(inT+v,outT-0.1))],['hR',v=>outT=Math.min(dur,Math.max(outT+v,inT+0.1))]]
+.forEach(([id,fn])=>$(id).addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'){fn(-0.1);updateSel();}
+  if(e.key==='ArrowRight'){fn(0.1);updateSel();}
+}));
+
+// 滤镜
+function cssFilter(){
+  let f=`brightness(${$('bri').value}%) contrast(${$('con').value}%) saturate(${$('sat').value}%) hue-rotate(${$('hue').value}deg)`;
+  if(preset==='gray')f+=' grayscale(1)';
+  if(preset==='sepia')f+=' sepia(.8)';
+  if(preset==='cool')f+=' hue-rotate(180deg) saturate(120%)';
+  if(preset==='warm')f+=' sepia(.3) saturate(130%)';
+  return f;
+}
+function applyFilter(){
+  video.style.filter=cssFilter();video.style.webkitFilter=cssFilter();
+  $('vB').textContent=$('bri').value+'%';$('vC').textContent=$('con').value+'%';
+  $('vS').textContent=$('sat').value+'%';$('vH').textContent=$('hue').value+'°';
+}
+['bri','con','sat','hue'].forEach(i=>$(i).oninput=applyFilter);
+document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');preset=b.dataset.f;applyFilter();
+});
+
+// 速度
+$('rate').oninput=()=>{video.playbackRate=$('rate').value/100;$('vR').textContent=(($('rate').value)/100).toFixed(2).replace(/0$/,'')+'×';};
+
+// —— iOS 兼容层 ——
+// 旧版 iOS Safari 不支持 canvas ctx.filter,用像素运算回退
+const FILTER_OK=(()=>{const x=document.createElement('canvas').getContext('2d');return typeof x.filter==='string';})();
+function drawFiltered(ctx,w,h){
+  if(FILTER_OK){ctx.filter=cssFilter();ctx.drawImage(video,0,0,w,h);return;}
+  ctx.drawImage(video,0,0,w,h);
+  const b=$('bri').value/100,co=$('con').value/100,sa=$('sat').value/100;
+  let hu=$('hue').value*Math.PI/180,gray=0,sep=0,extraSat=1;
+  if(preset==='gray')gray=1;
+  if(preset==='sepia')sep=.8;
+  if(preset==='cool'){hu+=Math.PI;extraSat=1.2;}
+  if(preset==='warm'){sep=.3;extraSat=1.3;}
+  const S=sa*extraSat;
+  if(b===1&&co===1&&S===1&&hu===0&&!gray&&!sep)return;
+  const img=ctx.getImageData(0,0,w,h),d=img.data;
+  const cosH=Math.cos(hu),sinH=Math.sin(hu);
+  // 亮度矩阵权重
+  const lr=.213,lg=.715,lb=.072;
+  for(let i=0;i<d.length;i+=4){
+    let r=d[i]*b,g=d[i+1]*b,bl=d[i+2]*b;
+    // 对比度
+    r=(r-128)*co+128;g=(g-128)*co+128;bl=(bl-128)*co+128;
+    // 色相旋转(近似矩阵)
+    if(hu){
+      const nr=(lr+cosH*(1-lr)+sinH*(-lr))*r+(lg+cosH*(-lg)+sinH*(-lg))*g+(lb+cosH*(-lb)+sinH*(1-lb))*bl;
+      const ng=(lr+cosH*(-lr)+sinH*.143)*r+(lg+cosH*(1-lg)+sinH*.14)*g+(lb+cosH*(-lb)+sinH*(-.283))*bl;
+      const nb=(lr+cosH*(-lr)+sinH*(-(1-lr)))*r+(lg+cosH*(-lg)+sinH*lg)*g+(lb+cosH*(1-lb)+sinH*lb)*bl;
+      r=nr;g=ng;bl=nb;
+    }
+    // 饱和度
+    if(S!==1){const l=lr*r+lg*g+lb*bl;r=l+(r-l)*S;g=l+(g-l)*S;bl=l+(bl-l)*S;}
+    // 黑白 / 复古
+    if(gray){const l=lr*r+lg*g+lb*bl;r=g=bl=l;}
+    else if(sep){
+      const sr=.393*r+.769*g+.189*bl,sg=.349*r+.686*g+.168*bl,sb=.272*r+.534*g+.131*bl;
+      r=r+(sr-r)*sep;g=g+(sg-g)*sep;bl=bl+(sb-bl)*sep;
+    }
+    d[i]=r;d[i+1]=g;d[i+2]=bl;
+  }
+  ctx.putImageData(img,0,0);
+}
+// iOS 不支持 video.captureStream,用 WebAudio 抓取音轨
+let audioCtx=null,audioDest=null,audioHooked=false;
+function getAudioTracks(){
+  try{
+    if(video.captureStream){
+      const t=video.captureStream().getAudioTracks();
+      if(t.length)return t;
+    }
+  }catch(e){}
+  try{
+    if(!audioHooked){
+      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      const src=audioCtx.createMediaElementSource(video);
+      audioDest=audioCtx.createMediaStreamDestination();
+      src.connect(audioDest);src.connect(audioCtx.destination);
+      audioHooked=true;
+    }
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    return audioDest.stream.getAudioTracks();
+  }catch(e){return[];}
+}
+
+// 截图
+$('shotBtn').onclick=()=>{
+  const c=document.createElement('canvas');
+  c.width=video.videoWidth;c.height=video.videoHeight;
+  const ctx=c.getContext('2d');
+  drawFiltered(ctx,c.width,c.height);
+  const a=document.createElement('a');
+  a.href=c.toDataURL('image/png');a.download='截图_'+fmt(video.currentTime).replace(':','-')+'.png';a.click();
+};
+
+// 导出:canvas + MediaRecorder,包含滤镜与裁剪范围
+$('exportBtn').onclick=async()=>{
+  const btn=$('exportBtn'),st=$('status');
+  if(!window.MediaRecorder){st.textContent='此浏览器不支持导出录制';return;}
+  btn.disabled=true;st.textContent='正在录制导出…';
+  const c=document.createElement('canvas');
+  // 旧 iOS 走像素滤镜时降分辨率保帧率
+  const scale=(!FILTER_OK&&video.videoWidth>1280)?1280/video.videoWidth:1;
+  c.width=Math.round(video.videoWidth*scale);c.height=Math.round(video.videoHeight*scale);
+  const ctx=c.getContext('2d');
+  const stream=c.captureStream(30);
+  getAudioTracks().forEach(t=>stream.addTrack(t));
+  // 优先 MP4(H.264/AAC),浏览器不支持时回退 WebM
+  const candidates=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'];
+  const mime=candidates.find(m=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m))||'';
+  const isMp4=mime.startsWith('video/mp4');
+  const ext=isMp4?'mp4':'webm';
+  const rec=mime?new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:6e6}):new MediaRecorder(stream);
+  const chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  rec.onstop=()=>{
+    const url=URL.createObjectURL(new Blob(chunks,{type:isMp4?'video/mp4':'video/webm'}));
+    const a=document.createElement('a');a.href=url;a.download='剪辑导出.'+ext;
+    document.body.appendChild(a);a.click();a.remove();
+    st.textContent='导出完成 ✓ 格式: '+ext.toUpperCase();btn.disabled=false;
+    setTimeout(()=>URL.revokeObjectURL(url),8000);
+  };
+  const wasMuted=video.muted;video.muted=false;
+  video.currentTime=inT;
+  await new Promise(r=>video.addEventListener('seeked',r,{once:true}));
+  rec.start(500);
+  await video.play().catch(()=>{});
+  (function draw(){
+    if(video.currentTime>=outT){
+      rec.stop();video.pause();video.muted=wasMuted;return;
+    }
+    drawFiltered(ctx,c.width,c.height);
+    st.textContent='导出中… '+Math.round((video.currentTime-inT)/(outT-inT)*100)+'%';
+    requestAnimationFrame(draw);
+  })();
+};
+</script>
+</body>
+</html>
