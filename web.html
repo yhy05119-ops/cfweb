@@ -161,12 +161,6 @@
 
 <script>
 (() => {
-  // 默认地址:与页面同主机(file:// 打开时回退 localhost);https 页面下自动用 wss
-  const DEFAULT_WS_URL =
-    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname || 'localhost'}:9001/chat`;
-  // 也支持 index.html?ws=wss://example.com/chat 直接指定,便于收藏/分享
-  const PARAM_WS = new URLSearchParams(location.search).get('ws');
-
   let wsUrlBase = ''; // 点击"进入聊天室"时根据输入框确定
 
   const $ = (s) => document.querySelector(s);
