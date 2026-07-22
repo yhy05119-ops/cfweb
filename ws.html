@@ -130,7 +130,7 @@
     <div class="join-card">
       <div class="wordmark"><span class="mu">μ</span>WS 聊天室</div>
       <p>uWebSockets.js v20.67.0 · 前后端分离示例</p>
-      <div class="endpoint"><span class="led" id="joinLed"></span><input type="text" id="host"><input type="text" id="port"></div>
+      <div class="endpoint"><span class="led" id="joinLed"></span><input type="text" id="url"></div>
       <div class="field">
         <input id="nameInput" placeholder="输入昵称" maxlength="20" autocomplete="off" />
         <button class="primary" id="joinBtn">进入聊天室</button>
@@ -205,9 +205,7 @@
     scrollBottom();
   }
   
-  const WS_PORT = document.getElementById("port").value;
-  const WS_HOST = document.getElementById("host").value;
-  const WS_URL_BASE = `ws://${WS_HOST}:${WS_PORT}/chat`;
+  const WS_URL_BASE = `document.getElementById("url").value`;
   
   function connect() {
     setStatus('connecting');
