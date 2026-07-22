@@ -154,10 +154,6 @@
 
 <script>
 (() => {
-  const WS_PORT = document.getElementById("port").value;
-  const WS_HOST = document.getElementById("host").value;
-  const WS_URL_BASE = `ws://${WS_HOST}:${WS_PORT}/chat`;
-
   const $ = (s) => document.querySelector(s);
   const joinView = $('#joinView'), chatView = $('#chatView');
   const nameInput = $('#nameInput'), joinBtn = $('#joinBtn');
@@ -208,7 +204,11 @@
     list.appendChild(wrap);
     scrollBottom();
   }
-
+  
+  const WS_PORT = document.getElementById("port").value;
+  const WS_HOST = document.getElementById("host").value;
+  const WS_URL_BASE = `ws://${WS_HOST}:${WS_PORT}/chat`;
+  
   function connect() {
     setStatus('connecting');
     ws = new WebSocket(`${WS_URL_BASE}?name=${encodeURIComponent(myName)}`);
